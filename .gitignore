@@ -1,0 +1,17 @@
+# Build output
+.build/
+build/
+DerivedData/
+*.o
+*.swiftmodule
+
+# Dependencies
+node_modules/
+Pods/
+
+# Editor / OS
+.DS_Store
+xcuserdata/
+*.xcuserstate
+.idea/
+local.properties
