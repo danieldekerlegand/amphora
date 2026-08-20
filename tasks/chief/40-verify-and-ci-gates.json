@@ -25,8 +25,8 @@
         "It exits non-zero if any reachable target fails to build.",
         "It exits non-zero on a deliberately broken tree \u2014 proven, not assumed."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "verify.sh: Swift build PASS, Swift path tests PASS (2 passed), TypeScript typecheck PASS; Gradle explicitly SKIPPED because no wrapper or gradle command is installed. A deliberate Swift syntax break produced FAIL and exit 1."
     },
     {
       "id": "US-2",
@@ -37,8 +37,8 @@
         "The Android job is a REQUIRED check \u2014 it is the only environment where that target is compiled at all.",
         "CI fails on a warning regression in the Swift target, which is currently at zero."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "CI workflow YAML parsed successfully; iOS job runs Swift build with -warnings-as-errors and path tests on macOS, Android job installs JDK 17 plus SDK 35 and runs gradle :android:assemble without continue-on-error, and React Native job runs control-surface check, typecheck, and build. Local Swift checks PASS (2 path tests), RN checks PASS; Android is CI-only because Java/Gradle are unavailable locally."
     }
   ]
 }

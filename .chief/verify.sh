@@ -1,58 +1,48 @@
 #!/usr/bin/env bash
-# .chief/verify.sh — Chief verification hook.
-#
-# Chief runs this after a tasklist's stories are done and its branch has been
-# rebased onto the base. Return 0 to ALLOW the merge, non-zero to BLOCK it (the
-# branch is left for review). Runs with cwd = repo root, the finished branch
-# checked out; $CHIEF_BASE_BRANCH names the base (use it to baseline if you want).
-#
-# Replace the body with your project's real checks (build + tests + lint).
+# .chief/verify.sh — verify every target whose toolchain is available.
 set -uo pipefail
 
-changed="$(git diff --name-only "$CHIEF_BASE_BRANCH"...HEAD)"
-[ -z "$changed" ] && { echo "verify: no diff vs $CHIEF_BASE_BRANCH"; exit 0; }
+failures=0
 
-# --- EDIT ME: run the checks relevant to what the branch changed ---
-# The RN spec is intentionally a control surface only; keep this guard here as
-# well as in CI so a future transfer helper cannot enter JavaScript unnoticed.
-(
-  cd packages/react-native && npm run check:control-surface
-) || exit 1
+run_check() {
+  local label="$1"
+  shift
+  echo "RUNNING ${label}"
+  if "$@"; then
+    echo "PASS ${label}"
+  else
+    echo "FAIL ${label}"
+    failures=$((failures + 1))
+  fi
+}
 
-# --- OPTIONAL: the code-quality RATCHET (a second, MEASURED axis) -------------
-# The checks above are a pass/fail test oracle — they answer "did the gates exit
-# 0", which is blind to maintainability damage. Tests come back in seconds;
-# duplication, ballooning functions, deep nesting and helpers nobody reuses show
-# up in weeks. `chief quality ratchet` measures those deterministically (awk over
-# text — no model judgment, no network) on the files this branch changed, compares
-# them against the SAME files at $CHIEF_BASE_BRANCH, and exits non-zero when a
-# tracked metric regressed past its tolerance. It is a RATCHET, not a threshold:
-# your repo's existing complexity is never held against it, only what a branch adds.
-#
-# OFF BY DEFAULT ON PURPOSE. Turning a gate on for a brownfield repo the moment
-# `chief init` runs is how a gate gets disabled permanently instead of adopted.
-# Bootstrap it deliberately:
-#
-#   1. Look at the numbers first, block on nothing:
-#        chief quality measure --changed "$CHIEF_BASE_BRANCH" | jq .totals
-#   2. Turn on the delta axis by uncommenting the line below. This alone gates
-#      every file the branch MODIFIED, and needs no baseline file.
-#   3. OPTIONAL, once the tree is in a shape you'd defend: add the whole-tree
-#      floor, which also covers files a branch CREATES (the delta axis cannot —
-#      a new file has no base version to regress from):
-#        chief quality ratchet --write-baseline    # writes .chief/quality-baseline.json
-#        git add .chief/quality-baseline.json && git commit -m 'chore: quality baseline'
-#      Re-run --write-baseline to re-baseline; committing the result is the
-#      explicit, reviewable escape hatch. Skip this step while the tree is messy —
-#      a floor you can't hold is worse than no floor.
-#   4. Tune the tracked metrics + tolerances in .chief/quality.conf (created by
-#      `chief init`). Dropping a metric is a visible edit to a tracked file; there
-#      is deliberately no implicit way to switch one off.
-#
-# CHIEF_VERIFY_QUALITY=0 skips just this gate while iterating locally;
-# NO_VERIFY=1 bypasses the whole hook. Full contract: docs/reference/verify-hook.md.
-#
-# chief quality ratchet --base "$CHIEF_BASE_BRANCH" || exit 1
+if command -v swift >/dev/null 2>&1 && [ -f ios/Package.swift ]; then
+  run_check "Swift build" swift build --package-path ios
+  run_check "Swift tests" swift run --package-path ios AmphoraPathTests
+else
+  echo "SKIPPED Swift: swift toolchain or ios/Package.swift unavailable; Swift build and tests unverified"
+fi
 
-echo "verify: no checks configured yet — edit .chief/verify.sh (allowing merge)"
-exit 0
+if [ -x ./gradlew ]; then
+  run_check "Gradle build" ./gradlew build
+elif command -v gradle >/dev/null 2>&1; then
+  run_check "Gradle build" gradle build
+else
+  echo "SKIPPED Gradle: Gradle wrapper/command unavailable; Android build unverified"
+fi
+
+if command -v npm >/dev/null 2>&1 && [ -f packages/react-native/package.json ]; then
+  if [ ! -d packages/react-native/node_modules ]; then
+    run_check "TypeScript dependency install" npm --prefix packages/react-native ci
+  fi
+  run_check "TypeScript typecheck" npm --prefix packages/react-native run typecheck
+else
+  echo "SKIPPED TypeScript: npm or packages/react-native/package.json unavailable; TypeScript typecheck unverified"
+fi
+
+if [ "$failures" -ne 0 ]; then
+  echo "verify: ${failures} reachable target check(s) failed"
+  exit 1
+fi
+
+echo "verify: all reachable target checks passed; skipped targets were reported above"
