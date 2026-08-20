@@ -22,6 +22,8 @@ documentation still greps as current.
 - [iOS background transfer](reference/ios-background-transfer.md) — session identity, task
   re-identification after relaunch, the two transports and the deployment-target decision
   between them, and the division of labour with the system.
+- [Environment verification matrix](reference/environment-matrix.md) — the OS × transport ×
+  source × interruption evidence ledger, including explicit physical-device gaps.
 
 ## Guides
 

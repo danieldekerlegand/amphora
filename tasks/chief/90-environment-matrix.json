@@ -24,8 +24,8 @@
         "Cells that a simulator or emulator cannot honestly cover are marked as such rather than filled with a weaker substitute.",
         "The iOS 17+ native transport and the pre-17 TUSKit fallback are BOTH exercised."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added docs/reference/environment-matrix.md and linked it from docs/README.md; 10 OS/transport/source rows × 4 interruption cells explicitly record NOT YET VERIFIED physical-device gaps. Swift build green; Amphora path tests 44 passed; TypeScript typecheck passed; Gradle skipped because no Gradle toolchain was available."
     },
     {
       "id": "US-2",

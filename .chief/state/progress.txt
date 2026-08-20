@@ -1,22 +1,22 @@
-# Chief Progress — 80-integration-against-tusd
-Started: Thu Aug 20 02:39:27 CDT 2026
+# Chief Progress — 90-environment-matrix
+Started: Thu Aug 20 02:46:23 CDT 2026
 ---
 
-## US-1 — Both platforms complete an upload against a real tusd instance
-- Added `integration/tusd/docker-compose.yml` with pinned tusd v2.4.0, MinIO, and S3 bucket initialization, plus `integration/tusd/run.sh` for a deterministic 3 MiB create/head/patch/version-mismatch/terminate smoke test.
-- Added opt-in Swift (`AmphoraTusdIntegration`) and Kotlin (`TusdIntegrationTest`) live-wire clients that exercise create, authoritative HEAD, PATCH completion, pinned-version rejection, and post-DELETE 404/410 behavior.
-- Documented setup and invocation in `docs/guides/tusd-integration.md` and linked it from README.
-- Verification observed: Swift warnings-as-errors build green; Swift path tests 44 passed; Swift integration target compiles; shell syntax, Compose config, and diff checks green. Live Docker execution was attempted but the local Docker daemon was unavailable. Android Gradle was unavailable locally.
+## US-1 — A written environment matrix, with each cell's verdict and how it was reached
+
+Added `docs/reference/environment-matrix.md` and linked it from `docs/README.md`. The matrix
+covers iOS 17+ native and pre-17 TUSKit transports, Android 14/15 workers, platform source types,
+and four interruption modes. Each cell names `AUTOMATED`, `MANUAL-ON-DEVICE`, or `NOT YET VERIFIED`,
+with physical-device-only gaps called out rather than replaced by simulator evidence. The document
+also records the checked-in code-path evidence for both iOS transports and the evidence needed to
+close a manual cell.
+
+Verification: `.chief/verify.sh` passed Swift build, Swift tests (`Amphora path tests: 44 passed`),
+and TypeScript typecheck; Gradle was skipped because no Gradle toolchain was available.
 
 ### Learnings for future iterations
-- tusd's S3 credentials are supplied through `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`; the CLI does not take access-key flags.
-- Keep real-wire tests opt-in because they require Docker and Android tooling; deterministic protocol/state checks remain the default CI path.
 
-## US-2 — Resume works across an interruption, from the server's offset
-- Added `integration/tusd/resume.sh`, which kills a throttled PATCH process, re-HEADs from a fresh process, resumes from the server offset, and verifies the MinIO S3 object checksum matches the source.
-- Extended Swift and Kotlin tusd integration targets to upload in two windows and construct a fresh client between windows; added typed unexpected-offset validation in both transport layers.
-- Verification observed: Swift warnings-as-errors build green; Swift path tests 44 passed; shell syntax and diff checks green. Live Docker resume was attempted but the local Docker daemon was unavailable; Android Gradle was unavailable locally.
-
-### Learnings for future iterations
-- A resumability integration must validate both the authoritative HEAD offset and bytes at rest; offsets alone cannot detect a corrupted remainder.
-- Keep unexpected offsets typed at the transport boundary so the engine can classify them as protocol failures instead of restarting from a local guess.
+Environmental evidence must distinguish checked-in code-path tests from physical-device behavior;
+simulators/emulators cannot substantiate background budgets, process death, storage reclamation, or
+radio transitions. Keep the matrix cells explicit so later device runs can replace only the relevant
+verdicts.
