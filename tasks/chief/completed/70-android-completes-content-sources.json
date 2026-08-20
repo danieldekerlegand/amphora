@@ -1,0 +1,62 @@
+{
+  "project": "amphora",
+  "category": "feature",
+  "branchName": "chief/70-android-completes-content-sources",
+  "description": "Android's counterpart to `60`. Two source paths are stubbed: **seekable `content://` opening** and **provider staging**.\n\nThe asymmetry with iOS is real and worth respecting rather than abstracting away: a `content://` URI may or may not be seekable depending on the provider, and that is knowable only at runtime. When it is seekable, byte ranges stream and nothing is staged — the design commitment holds. When it is not, a staged copy is written under a reservation, which on Android means genuinely *reserving* space via `StorageManager.allocateBytes` rather than merely checking free space.\n\nThat reservation is the piece nothing off-the-shelf has, so it deserves a test that proves it actually reserves rather than just querying.",
+  "dependsOn": [
+    "50-conformance-vectors"
+  ],
+  "touches": [
+    "android/"
+  ],
+  "iters": 4,
+  "warmup": [],
+  "userStories": [
+    {
+      "id": "US-1",
+      "title": "A seekable content:// source streams without staging",
+      "description": "Detect seekability at runtime and take the no-copy path whenever it is available.",
+      "acceptanceCriteria": [
+        "Seekability is determined at runtime, not assumed from the URI scheme.",
+        "A seekable source streams byte ranges with no staged copy — asserted by checking that no staging file is created.",
+        "A test covers both a seekable and a non-seekable provider."
+      ],
+      "passes": true,
+      "notes": "SourceResolver probes ParcelFileDescriptor.seekTo at runtime and streams seekable descriptors through FileChannel; Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally.",
+      "diffSize": {
+        "files": 3,
+        "lines": 75,
+        "renames": 0,
+        "budget": {
+          "lines": 400,
+          "files": 20
+        },
+        "overBudget": false
+      }
+    },
+    {
+      "id": "US-2",
+      "title": "Non-seekable providers stage under a real StorageManager reservation",
+      "description": "`allocateBytes` genuinely reserves; a free-space check does not. The difference is the whole point.",
+      "acceptanceCriteria": [
+        "Staging calls `StorageManager.allocateBytes` rather than reading free space.",
+        "A denied allocation fails the job with a typed error instead of proceeding and failing later.",
+        "The staged copy is removed on completion, cancel and failure.",
+        "A test asserts the allocation call is actually made, not merely that staging succeeded."
+      ],
+      "passes": true,
+      "notes": "Non-seekable staging calls StorageManager.allocateBytes directly; StorageGovernorTest observed one allocator call for a reservation. Denied allocation raises typed StorageReservationDenied and dispatches SpaceDenied before remote creation. Reservation/copy failures and completion/cancel/failure cleanup remove staged files. Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally.",
+      "diffSize": {
+        "files": 7,
+        "lines": 146,
+        "renames": 0,
+        "budget": {
+          "lines": 400,
+          "files": 20
+        },
+        "overBudget": false
+      }
+    }
+  ],
+  "mergedToMain": "c20a17b"
+}
