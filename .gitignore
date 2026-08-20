@@ -15,3 +15,4 @@ xcuserdata/
 *.xcuserstate
 .idea/
 local.properties
+.chief/state/

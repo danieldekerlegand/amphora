@@ -1,0 +1,45 @@
+{
+  "project": "amphora",
+  "category": "feature",
+  "branchName": "chief/90-environment-matrix",
+  "description": "**The claims that justify this project's existence are all environmental, and none has been tested in the environment it concerns.** Everything up to `80` runs in a test harness. This tasklist runs it where it actually has to work.\n\nWhat is genuinely being tested, from `docs/reference/platform-constraints.md`:\n\n- **App suspension** \u2014 JS does not run while suspended, which is the entire reason the RN surface is a control plane only. Prove a transfer continues while the app is backgrounded.\n- **Process death and relaunch** \u2014 the durable registry plus launch reconciler exist for exactly this. *\"Close the app, reopen it, find the upload still there and still cancelable.\"*\n- **Storage reclamation mid-transfer** \u2014 the original bug. iOS reclaiming the purgeable `Caches` directory is why staging goes to Application Support.\n- **Android's 6h/24h `dataSync` budget** \u2014 a multi-hour upload must survive budget exhaustion by design, not by luck.\n- **iOS 17+ native transport vs the pre-17 fallback** \u2014 two transports, and only one of them is exercised on a modern simulator by default.\n- **Network transitions** \u2014 wifi to cellular, and loss mid-flight.\n\n**Simulators and emulators do not test most of this.** Background execution budgets, real storage pressure and radio transitions need physical devices. Where a case can only be checked on a device, say so and record the result rather than substituting a simulator run that proves something weaker.",
+  "dependsOn": [
+    "80-integration-against-tusd"
+  ],
+  "touches": [
+    "docs/",
+    "ios/",
+    "android/"
+  ],
+  "iters": 5,
+  "warmup": [],
+  "userStories": [
+    {
+      "id": "US-1",
+      "title": "A written environment matrix, with each cell's verdict and how it was reached",
+      "description": "The deliverable is the evidence, not a green tick. State which cells needed a physical device.",
+      "acceptanceCriteria": [
+        "A matrix document covers OS versions \u00d7 transport \u00d7 source type \u00d7 interruption mode, and is linked from `docs/README.md`.",
+        "Every cell records how it was verified: automated, manual-on-device, or NOT YET VERIFIED.",
+        "Cells that a simulator or emulator cannot honestly cover are marked as such rather than filled with a weaker substitute.",
+        "The iOS 17+ native transport and the pre-17 TUSKit fallback are BOTH exercised."
+      ],
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-2",
+      "title": "The four environmental claims are each demonstrated",
+      "description": "Backgrounding, process death, storage reclamation, and the Android dataSync budget.",
+      "acceptanceCriteria": [
+        "A transfer continues while the app is backgrounded, on both platforms, evidenced by a captured log or recording.",
+        "An upload survives process death and is resumable AND cancelable after relaunch \u2014 the README's stated promise, tested literally.",
+        "Storage reclaimed mid-transfer produces a clean typed failure and no corrupted upload \u2014 the original bug, proven retired.",
+        "An Android upload spanning the 6h `dataSync` budget continues correctly across budget exhaustion.",
+        "A wifi-to-cellular transition mid-transfer does not corrupt or restart the upload."
+      ],
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

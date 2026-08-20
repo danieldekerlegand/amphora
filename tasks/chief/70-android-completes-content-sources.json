@@ -1,0 +1,41 @@
+{
+  "project": "amphora",
+  "category": "feature",
+  "branchName": "chief/70-android-completes-content-sources",
+  "description": "Android's counterpart to `60`. Two source paths are stubbed: **seekable `content://` opening** and **provider staging**.\n\nThe asymmetry with iOS is real and worth respecting rather than abstracting away: a `content://` URI may or may not be seekable depending on the provider, and that is knowable only at runtime. When it is seekable, byte ranges stream and nothing is staged \u2014 the design commitment holds. When it is not, a staged copy is written under a reservation, which on Android means genuinely *reserving* space via `StorageManager.allocateBytes` rather than merely checking free space.\n\nThat reservation is the piece nothing off-the-shelf has, so it deserves a test that proves it actually reserves rather than just querying.",
+  "dependsOn": [
+    "50-conformance-vectors"
+  ],
+  "touches": [
+    "android/"
+  ],
+  "iters": 4,
+  "warmup": [],
+  "userStories": [
+    {
+      "id": "US-1",
+      "title": "A seekable content:// source streams without staging",
+      "description": "Detect seekability at runtime and take the no-copy path whenever it is available.",
+      "acceptanceCriteria": [
+        "Seekability is determined at runtime, not assumed from the URI scheme.",
+        "A seekable source streams byte ranges with no staged copy \u2014 asserted by checking that no staging file is created.",
+        "A test covers both a seekable and a non-seekable provider."
+      ],
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-2",
+      "title": "Non-seekable providers stage under a real StorageManager reservation",
+      "description": "`allocateBytes` genuinely reserves; a free-space check does not. The difference is the whole point.",
+      "acceptanceCriteria": [
+        "Staging calls `StorageManager.allocateBytes` rather than reading free space.",
+        "A denied allocation fails the job with a typed error instead of proceeding and failing later.",
+        "The staged copy is removed on completion, cancel and failure.",
+        "A test asserts the allocation call is actually made, not merely that staging succeeded."
+      ],
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
