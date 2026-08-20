@@ -24,6 +24,8 @@ documentation still greps as current.
   between them, and the division of labour with the system.
 - [Environment verification matrix](reference/environment-matrix.md) — the OS × transport ×
   source × interruption evidence ledger, including explicit physical-device gaps.
+- [Environmental claim evidence](reference/environment-evidence.md) — observed automated evidence,
+  device-only gaps, and commands required to close them.
 
 ## Guides
 

@@ -20,3 +20,22 @@ Environmental evidence must distinguish checked-in code-path tests from physical
 simulators/emulators cannot substantiate background budgets, process death, storage reclamation, or
 radio transitions. Keep the matrix cells explicit so later device runs can replace only the relevant
 verdicts.
+
+## US-2 — The four environmental claims are each demonstrated
+
+Added `docs/reference/environment-evidence.md` and linked it from `docs/README.md`. The ledger
+captures the observed automated evidence for tus offset recovery/cancelation and typed storage
+pressure cleanup, while explicitly preserving physical-device gaps for app suspension, process
+termination as an OS event, Android's six-hour `dataSync` budget exhaustion, and Wi-Fi→cellular
+handoff. It includes the exact reproduction commands and the required fields for future device
+recordings.
+
+Verification: `.chief/verify.sh` passed Swift build, Swift tests (`Amphora path tests: 44 passed`),
+and TypeScript typecheck; Gradle was skipped because no Gradle toolchain was available.
+
+### Learnings for future iterations
+
+Environmental claims must separate automated protocol/state evidence from OS behavior. A successful
+host-side test cannot stand in for suspension, process death, storage reclamation, foreground-service
+quota exhaustion, or radio handoff; retain the NOT YET VERIFIED label until a device log records the
+required job ID, offset, and final state.
