@@ -21,8 +21,8 @@
         "A seekable source streams byte ranges with no staged copy \u2014 asserted by checking that no staging file is created.",
         "A test covers both a seekable and a non-seekable provider."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "SourceResolver probes ParcelFileDescriptor.seekTo at runtime and streams seekable descriptors through FileChannel; Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally."
     },
     {
       "id": "US-2",

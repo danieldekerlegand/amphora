@@ -1,42 +1,41 @@
 {
   "project": "amphora",
   "category": "feature",
-  "branchName": "chief/60-ios-completes-remainder-and-photo-sources",
-  "description": "Removes the two `fatalError(\"unimplemented\")` landmines left standing by `30`.\n\n**`writeRemainder` (`StorageGovernor.swift:62`)** is the resume path — `TUSKitTransport:73` calls it whenever offset > 0. The existing TODO already names the design: *FileHandle seek + chunked read/write, re-sampling pressure every N MB*. That re-sampling is the point: free space is not a constant, and the original bug this whole project exists to retire was iOS reclaiming the app's cache mid-transfer.\n\n**PHAsset export (`StorageGovernor.swift:91`)** is the one source that genuinely cannot be seeked, so it is the one case where the *no chunk temp files* commitment yields and a staged copy is written — which is exactly when a storage reservation matters.\n\nHold the line on the design commitment: a staging copy here is the documented exception, not permission to stage elsewhere.",
+  "branchName": "chief/70-android-completes-content-sources",
+  "description": "Android's counterpart to `60`. Two source paths are stubbed: **seekable `content://` opening** and **provider staging**.\n\nThe asymmetry with iOS is real and worth respecting rather than abstracting away: a `content://` URI may or may not be seekable depending on the provider, and that is knowable only at runtime. When it is seekable, byte ranges stream and nothing is staged \u2014 the design commitment holds. When it is not, a staged copy is written under a reservation, which on Android means genuinely *reserving* space via `StorageManager.allocateBytes` rather than merely checking free space.\n\nThat reservation is the piece nothing off-the-shelf has, so it deserves a test that proves it actually reserves rather than just querying.",
   "dependsOn": [
     "50-conformance-vectors"
   ],
   "touches": [
-    "ios/"
+    "android/"
   ],
   "iters": 4,
   "warmup": [],
   "userStories": [
     {
       "id": "US-1",
-      "title": "`writeRemainder` streams from the source and re-samples pressure",
-      "description": "Seek and chunked copy, with free-space re-sampled as it goes so a reclamation mid-write is caught.",
+      "title": "A seekable content:// source streams without staging",
+      "description": "Detect seekability at runtime and take the no-copy path whenever it is available.",
       "acceptanceCriteria": [
-        "`writeRemainder` is implemented; no `fatalError` remains on that path.",
-        "It streams byte ranges from the source without materialising a full copy.",
-        "Free space is re-sampled during the write, and a mid-write shortfall aborts cleanly with a typed error rather than a partial file left behind.",
-        "A test simulates free space collapsing mid-write and asserts the abort path and the cleanup."
+        "Seekability is determined at runtime, not assumed from the URI scheme.",
+        "A seekable source streams byte ranges with no staged copy \u2014 asserted by checking that no staging file is created.",
+        "A test covers both a seekable and a non-seekable provider."
       ],
       "passes": true,
-      "notes": "swift build and .chief/verify.sh green; AmphoraPathTests reported 44 passed, including offset streaming and mid-write pressureRose cleanup."
+      "notes": "SourceResolver probes ParcelFileDescriptor.seekTo at runtime and streams seekable descriptors through FileChannel; Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally."
     },
     {
       "id": "US-2",
-      "title": "PHAsset export writes a staged copy under a reservation",
-      "description": "The documented exception to no-chunk-temp-files, and the only place a reservation gates a copy.",
+      "title": "Non-seekable providers stage under a real StorageManager reservation",
+      "description": "`allocateBytes` genuinely reserves; a free-space check does not. The difference is the whole point.",
       "acceptanceCriteria": [
-        "PHAsset export is implemented via `PHAssetResourceManager`, no `fatalError` remains.",
-        "The export happens under a storage reservation; a denied reservation fails the job with a typed error rather than proceeding.",
-        "The staged copy is removed on completion, cancel AND failure — asserted for all three.",
-        "A test covers a PHAsset source end to end against a transport double."
+        "Staging calls `StorageManager.allocateBytes` rather than reading free space.",
+        "A denied allocation fails the job with a typed error instead of proceeding and failing later.",
+        "The staged copy is removed on completion, cancel and failure.",
+        "A test asserts the allocation call is actually made, not merely that staging succeeded."
       ],
-      "passes": true,
-      "notes": "./.chief/verify.sh green: Swift build, Swift path tests 44 passed, and TypeScript typecheck passed; PHAsset export now uses PHAssetResourceManager under a reservation with failure cleanup and state-machine completion/cancel cleanup."
+      "passes": false,
+      "notes": ""
     }
   ]
 }

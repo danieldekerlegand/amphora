@@ -1,19 +1,12 @@
-# Chief Progress — 60-ios-completes-remainder-and-photo-sources
+# Chief Progress — 70-android-completes-content-sources
 Started: Thu Aug 20 02:31:02 CDT 2026
 ---
 
-## US-1 — `writeRemainder` streams from the source and re-samples pressure
+## US-1 — A seekable content:// source streams without staging
+- Implemented runtime descriptor seekability probing with `ParcelFileDescriptor.seekTo(0)`; seekable providers now stream through a `FileChannel` and never create a staging copy.
+- Updated the range request body to read byte windows from the generic seekable channel, preserving resumable range uploads for both files and provider descriptors.
+- Verification observed: `.chief/verify.sh` green; Swift build/tests green with 42 passed; TypeScript typecheck green; Android Gradle skipped because neither Gradle nor a wrapper is available locally.
+- Files changed: `android/src/main/kotlin/dev/amphora/core/SourceResolver.kt`, `android/src/main/kotlin/dev/amphora/transport/TusTransport.kt`, `android/src/main/kotlin/dev/amphora/core/DefaultUploadEngine.kt`.
 
-Implemented chunked FileHandle range copying in `StorageGovernor`, with injected capacity sampling for deterministic tests. A pressure shortfall throws `StorageError.pressureRose` and removes the destination via cleanup defer. Added successful offset-copy and mid-write pressure-collapse tests in `UploadPathTests`.
-
-Files changed: `ios/Sources/Amphora/Governor/StorageGovernor.swift`, `ios/Tests/AmphoraTests/UploadPathTests.swift`, runtime and tracked PRDs.
-
-Learnings for future iterations: `StorageGovernor` is an actor, so direct tests must be async and capacity behavior is best exercised through its `@Sendable` provider; run the Swift package checks from the repository root so conformance vectors resolve correctly.
-
-## US-2 — PHAsset export writes a staged copy under a reservation
-
-Implemented Photos asset export in `StorageGovernor` using `PHAssetResourceManager.writeData` with network access allowed for iCloud-backed originals. The export resolves the asset resource, uses an existing reservation or acquires one, and releases/removes the staged path on export failure; the existing state-machine effects remove staged paths on completion and cancel.
-
-Files changed: `ios/Sources/Amphora/Governor/StorageGovernor.swift`, runtime and tracked PRDs.
-
-Learnings for future iterations: Photos `writeData(for:toFile:)` returns no request identifier, so cancellation cleanup is owned by the state machine's reservation-release and staged-file-delete effects; export failures clean up synchronously at the governor boundary.
+### Learnings for future iterations
+- Android provider descriptors must be probed at runtime; URI schemes do not establish seekability. Keep non-seekable handling in `SourceResolver` so the next story can stage only after the probe fails.
