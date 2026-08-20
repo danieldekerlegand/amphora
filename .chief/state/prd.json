@@ -1,52 +1,44 @@
 {
   "project": "amphora",
-  "category": "fix",
-  "branchName": "chief/30-ios-runtime-is-constructible",
-  "description": "🟡 **iOS compiles but cannot be constructed, let alone run.** The 2026-08-20 pass got `swift build` to zero errors and zero warnings — which proved the code is well-formed, and nothing more.\n\nThree things stand between compiling and running:\n\n- **`UploadStore` is a protocol with no conforming type.** `Store/UploadStore.swift` declares 14 methods — get, leases, resume data, pruning — and no SQLite implementation exists anywhere in the tree. The doc comment already argues *why* SQLite over Core Data; that reasoning is the spec.\n- **`AmphoraUploader.swift:27` is a TODO where the graph should be** — *\"build the graph — session manager, governors, transport, engine, reconciler.\"* Nothing wires the parts together.\n- **Two `fatalError(\"unimplemented\")` landmines** in `StorageGovernor` — `writeRemainder` (line 62) and the PHAsset export (line 91). `writeRemainder` is on a path `TUSKitTransport:73` already calls, so a resumed upload crashes rather than fails.\n\n**Scope: the simple path only.** Offset-zero, plain-file sources — which is the common case for a first attempt and, deliberately, the path that touches neither `fatalError`. Filling those two is `60`. What this tasklist buys is an uploader you can actually instantiate and send bytes with.",
-  "dependsOn": [],
-  "touches": [
-    "ios/"
+  "category": "unblock",
+  "branchName": "chief/40-verify-and-ci-gates",
+  "description": "**Three targets, three toolchains, and nothing gating any of them.** There is no `verify.sh` content, no CI, and no test anywhere in the repository.\n\nThis is `unblock` in the strict sense: it ships no capability. Its value is that every later tasklist can fail loudly, and that the compile-clean state won `10`\u2013`30` cannot silently rot.\n\n**The honest constraint, stated up front:** the authoring machine has Swift 6.2 but **no JDK, no Gradle, no Android SDK, and no Xcode** (Command Line Tools only). So `verify.sh` must degrade explicitly \u2014 running what it can, and **reporting what it skipped and why**, never silently passing a target it could not build. A gate that quietly skips is worse than no gate, because it reads as green.",
+  "dependsOn": [
+    "10-android-target-compiles",
+    "20-react-native-package-builds",
+    "30-ios-runtime-is-constructible"
   ],
-  "iters": 5,
+  "touches": [
+    ".chief/",
+    ".github/"
+  ],
+  "iters": 3,
   "warmup": [],
   "userStories": [
     {
       "id": "US-1",
-      "title": "A concrete SQLite-backed UploadStore",
-      "description": "Implement the protocol as written. The lease methods are not optional extras — they are how two processes are prevented from driving one job.",
+      "title": "`.chief/verify.sh` builds and tests every target it can reach",
+      "description": "Swift, Gradle and TypeScript, each gated on its toolchain being present.",
       "acceptanceCriteria": [
-        "A concrete type conforms to `UploadStore` with every one of its 14 methods implemented.",
-        "Backed by SQLite, per the reasoning already recorded in the file's doc comment.",
-        "Lease acquire/release/renew/break behave correctly under a concurrent-acquisition test — two acquirers, one winner.",
-        "Durability is proven: a store written, released, and re-opened returns the same jobs.",
-        "`swift build` stays at zero errors and zero warnings."
+        "`.chief/verify.sh` runs the Swift build and tests, the Gradle build, and the TS typecheck.",
+        "A missing toolchain produces an explicit SKIPPED line naming the toolchain and what went unverified \u2014 never a silent pass.",
+        "It exits non-zero if any reachable target fails to build.",
+        "It exits non-zero on a deliberately broken tree \u2014 proven, not assumed."
       ],
       "passes": true,
-      "notes": "swift build: green, 0 errors and 0 warnings. SQLiteUploadStore implements all 14 methods with conditional SQL leases, durable JSON payloads, resume-data storage, filtering, and pruning; concurrent lease acquisition is a single-winner compare-and-set and reopening the same database reads persisted rows."
+      "notes": "verify.sh: Swift build PASS, Swift path tests PASS (2 passed), TypeScript typecheck PASS; Gradle explicitly SKIPPED because no wrapper or gradle command is installed. A deliberate Swift syntax break produced FAIL and exit 1."
     },
     {
       "id": "US-2",
-      "title": "The graph is built and an uploader can be instantiated",
-      "description": "Replace the TODO with real wiring: session manager, governors, transport selection, engine, reconciler.",
+      "title": "CI builds all three targets on a runner that has the toolchains",
+      "description": "What the laptop cannot verify, CI must. This is the only place Android is genuinely checked.",
       "acceptanceCriteria": [
-        "`AmphoraUploader` constructs without a TODO or a placeholder, and the iOS 17+ / pre-17 transport choice is made by the graph.",
-        "A test instantiates the uploader and enqueues a job without touching the network.",
-        "`docs/guides/ios-host-integration.md` matches what the code now actually requires of a host app."
+        "A CI workflow builds iOS (macOS runner), Android (JDK + SDK) and the RN package.",
+        "The Android job is a REQUIRED check \u2014 it is the only environment where that target is compiled at all.",
+        "CI fails on a warning regression in the Swift target, which is currently at zero."
       ],
-      "passes": true,
-      "notes": "swift build: green, 0 errors and 0 warnings. AmphoraUploader now publicly constructs and configure wires storage, network/source governors, background session, OS-version-selected transport, engine, and reconciler; the session delegate uses an installed event-sink proxy. Host integration now opens SQLiteUploadStore at an Application Support path, and enqueue persists before scheduling without a network call."
-    },
-    {
-      "id": "US-3",
-      "title": "The offset-zero path moves bytes end to end",
-      "description": "Against a local test double, not a live server — `80` does the real thing.",
-      "acceptanceCriteria": [
-        "A test drives create → append → complete for a plain-file source at offset zero, asserting the wire calls in order.",
-        "Neither `fatalError` is reachable on this path — proven by a test that would trap if it were.",
-        "A cancel mid-transfer leaves no orphaned staged file."
-      ],
-      "passes": true,
-      "notes": "AmphoraPathTests: 2 passed. Local transport double observed create → head(offset 0) → append(offset 0), then complete; cancellation removed the staged file. swift build -Xswiftc -warnings-as-errors and git diff --check: green."
+      "passes": false,
+      "notes": ""
     }
   ]
 }

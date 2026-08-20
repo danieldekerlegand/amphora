@@ -25,8 +25,8 @@
         "It exits non-zero if any reachable target fails to build.",
         "It exits non-zero on a deliberately broken tree \u2014 proven, not assumed."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "verify.sh: Swift build PASS, Swift path tests PASS (2 passed), TypeScript typecheck PASS; Gradle explicitly SKIPPED because no wrapper or gradle command is installed. A deliberate Swift syntax break produced FAIL and exit 1."
     },
     {
       "id": "US-2",
