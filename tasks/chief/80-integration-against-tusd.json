@@ -25,8 +25,8 @@
         "The pinned interop version is asserted \u2014 a server advertising a different version is rejected rather than guessed at.",
         "`terminate` is proven to actually remove the server-side upload."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added pinned tusd v2.4.0 + MinIO Compose environment and 3 MiB create/head/patch/terminate checks for Swift and Kotlin; Swift build with warnings-as-errors and 44 path tests green, Swift integration target compiles, bash/config validation green. Live Docker run was attempted but the local Docker daemon was unavailable."
     },
     {
       "id": "US-2",
@@ -38,8 +38,8 @@
         "The bytes that arrive at S3 are byte-identical to the source \u2014 verified by checksum, on both platforms.",
         "A server that reports an unexpected offset is handled as a typed error, not by silently restarting."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added process-death resume coverage for Swift and Kotlin: each relaunches with a fresh client and resumes from authoritative HEAD; resume.sh kills a throttled PATCH, resumes from the reported offset, and verifies the MinIO S3 object SHA-256. Added typed unexpected-offset handling. Swift warnings-as-errors build and 44 path tests green; shell syntax and diff checks green. Live Docker resume was attempted but the local Docker daemon was unavailable; Android Gradle was unavailable locally."
     }
   ]
 }

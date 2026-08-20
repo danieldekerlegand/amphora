@@ -71,11 +71,15 @@ class TusTransport(
         client.newCall(builder.build()).await().use { response ->
             when (response.code) {
                 404, 410 -> throw UploadGone
-                in 200..204 -> HeadResult(
-                    offset = dialect.readOffset(response.headers)
-                        ?: throw HttpFailure(response.code, "HEAD carried no Upload-Offset"),
-                    expiresAt = dialect.readExpiry(response.headers, now()),
-                )
+                in 200..204 -> {
+                    val offset = dialect.readOffset(response.headers)
+                        ?: throw HttpFailure(response.code, "HEAD carried no Upload-Offset")
+                    if (offset < 0) throw UnexpectedOffset(offset)
+                    HeadResult(
+                        offset = offset,
+                        expiresAt = dialect.readExpiry(response.headers, now()),
+                    )
+                }
                 else -> throw HttpFailure(response.code, "HEAD failed")
             }
         }
@@ -126,6 +130,7 @@ class TusTransport(
                     // acked value, and the amount actually sent may be short if the deadline cut
                     // the body off mid-window.
                     val acked = dialect.readOffset(response.headers) ?: (offset + body.bytesWritten)
+                    if (acked < offset || acked > totalSize) throw UnexpectedOffset(acked)
                     PatchResult(ackedOffset = acked, complete = acked >= totalSize)
                 }
                 else -> throw HttpFailure(response.code, "PATCH failed")
@@ -159,6 +164,7 @@ class TusTransport(
      */
     fun classify(throwable: Throwable): ErrorClass = when (throwable) {
         is UploadGone -> ErrorClass.FATAL          // caller converts to Gone before reaching here
+        is UnexpectedOffset -> ErrorClass.PROTOCOL
         is OffsetConflict -> ErrorClass.PROTOCOL
         is IOException -> ErrorClass.TRANSIENT     // socket reset, timeout, network handover
         is HttpFailure -> when (throwable.code) {
@@ -184,6 +190,7 @@ class TusTransport(
 
 object UploadGone : Exception("upload resource no longer exists")
 object OffsetConflict : Exception("server offset disagrees with ours")
+class UnexpectedOffset(val actual: Long) : Exception("server returned unexpected offset $actual")
 
 /** Not an error: the slice ran out of foreground-service budget. Resume via HEAD. */
 object SliceDeadlineReached : IOException("slice deadline reached")

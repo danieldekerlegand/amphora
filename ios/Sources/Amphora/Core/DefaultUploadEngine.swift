@@ -225,6 +225,10 @@ public actor DefaultUploadEngine: UploadEngine {
             await dispatch(jobId: job.id, event: .offsetDiverged(serverOffset: offset))
             return
         }
+        if offset > current.sizeBytes {
+            await dispatch(jobId: job.id, event: .transportError(.protocolError, detail: "\(TransportError.unexpectedOffset(actual: offset))"))
+            return
+        }
         if offset >= current.sizeBytes {
             await dispatch(jobId: job.id, event: .transportComplete)
             await dispatch(jobId: job.id, event: .serverAck)

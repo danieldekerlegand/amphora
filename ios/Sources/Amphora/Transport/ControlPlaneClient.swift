@@ -84,6 +84,7 @@ public struct ControlPlaneClient: Sendable {
             throw TransportError.gone
         case 200...204:
             guard let offset = dialect.readOffset(http) else { throw TransportError.missingOffset }
+            guard offset >= 0 else { throw TransportError.unexpectedOffset(actual: offset) }
             return HeadResult(offset: offset, expiresAt: dialect.readExpiry(http, now: now()))
         default:
             throw TransportError.http(http.statusCode)
@@ -118,7 +119,7 @@ public extension TransportError {
     var errorClass: ErrorClass {
         switch self {
         case .gone: return .fatal          // caller converts to `.gone` before reaching here
-        case .missingUploadURL, .missingLocation, .missingOffset, .badResponse: return .protocolError
+        case .missingUploadURL, .missingLocation, .missingOffset, .unexpectedOffset, .badResponse: return .protocolError
         case .remainderStagingDenied: return .local
         case let .http(code):
             switch code {

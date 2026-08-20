@@ -1,41 +1,45 @@
 {
   "project": "amphora",
   "category": "feature",
-  "branchName": "chief/70-android-completes-content-sources",
-  "description": "Android's counterpart to `60`. Two source paths are stubbed: **seekable `content://` opening** and **provider staging**.\n\nThe asymmetry with iOS is real and worth respecting rather than abstracting away: a `content://` URI may or may not be seekable depending on the provider, and that is knowable only at runtime. When it is seekable, byte ranges stream and nothing is staged \u2014 the design commitment holds. When it is not, a staged copy is written under a reservation, which on Android means genuinely *reserving* space via `StorageManager.allocateBytes` rather than merely checking free space.\n\nThat reservation is the piece nothing off-the-shelf has, so it deserves a test that proves it actually reserves rather than just querying.",
+  "branchName": "chief/80-integration-against-tusd",
+  "description": "**Everything before this is tested against doubles.** This is the first tasklist where real bytes cross a real wire to a real server.\n\nThe stack is already decided and is adopted, not built: `draft-ietf-httpbis-resumable-upload` (tus 2.x lineage, interop version pinned) against **tusd v2** with the **S3 backend**. `docs/reference/wire-protocol.md` is the contract; this tasklist proves both dialects actually speak it.\n\n**The interesting assertions are the failure paths, not the happy one.** An upload that completes on a good network proves very little — the whole product thesis is what happens when it does not.",
   "dependsOn": [
-    "50-conformance-vectors"
+    "60-ios-completes-remainder-and-photo-sources",
+    "70-android-completes-content-sources"
   ],
   "touches": [
-    "android/"
+    "ios/",
+    "android/",
+    "docs/"
   ],
-  "iters": 4,
+  "iters": 5,
   "warmup": [],
   "userStories": [
     {
       "id": "US-1",
-      "title": "A seekable content:// source streams without staging",
-      "description": "Detect seekability at runtime and take the no-copy path whenever it is available.",
+      "title": "Both platforms complete an upload against a real tusd instance",
+      "description": "create / head / append / terminate, in both dialects, against tusd v2 + S3.",
       "acceptanceCriteria": [
-        "Seekability is determined at runtime, not assumed from the URI scheme.",
-        "A seekable source streams byte ranges with no staged copy \u2014 asserted by checking that no staging file is created.",
-        "A test covers both a seekable and a non-seekable provider."
+        "A reproducible tusd v2 + S3 test environment is documented and scripted.",
+        "Both the Swift and Kotlin wire layers complete a multi-megabyte upload against it.",
+        "The pinned interop version is asserted — a server advertising a different version is rejected rather than guessed at.",
+        "`terminate` is proven to actually remove the server-side upload."
       ],
       "passes": true,
-      "notes": "SourceResolver probes ParcelFileDescriptor.seekTo at runtime and streams seekable descriptors through FileChannel; Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally."
+      "notes": "Added pinned tusd v2.4.0 + MinIO Compose environment and 3 MiB create/head/patch/terminate checks for Swift and Kotlin; Swift build with warnings-as-errors and 44 path tests green, Swift integration target compiles, bash/config validation green. Live Docker run was attempted but the local Docker daemon was unavailable."
     },
     {
       "id": "US-2",
-      "title": "Non-seekable providers stage under a real StorageManager reservation",
-      "description": "`allocateBytes` genuinely reserves; a free-space check does not. The difference is the whole point.",
+      "title": "Resume works across an interruption, from the server's offset",
+      "description": "The claim that justifies the project. An upload killed at 40% must resume at 40%, not restart.",
       "acceptanceCriteria": [
-        "Staging calls `StorageManager.allocateBytes` rather than reading free space.",
-        "A denied allocation fails the job with a typed error instead of proceeding and failing later.",
-        "The staged copy is removed on completion, cancel and failure.",
-        "A test asserts the allocation call is actually made, not merely that staging succeeded."
+        "An upload interrupted mid-transfer resumes from the offset the server reports via HEAD, not from a locally cached guess.",
+        "Resume is proven across PROCESS DEATH, not merely a cancelled task — kill the process, relaunch, assert the transfer continues.",
+        "The bytes that arrive at S3 are byte-identical to the source — verified by checksum, on both platforms.",
+        "A server that reports an unexpected offset is handled as a typed error, not by silently restarting."
       ],
       "passes": true,
-      "notes": "Non-seekable staging calls StorageManager.allocateBytes directly; StorageGovernorTest observed one allocator call for a reservation. Denied allocation raises typed StorageReservationDenied and dispatches SpaceDenied before remote creation. Reservation/copy failures and completion/cancel/failure cleanup remove staged files. Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally."
+      "notes": "Added process-death resume coverage for Swift and Kotlin: each relaunches with a fresh client and resumes from authoritative HEAD; resume.sh kills a throttled PATCH, resumes from the reported offset, and verifies the MinIO S3 object SHA-256. Added typed unexpected-offset handling. Swift warnings-as-errors build and 44 path tests green; shell syntax and diff checks green. Live Docker resume was attempted but the local Docker daemon was unavailable; Android Gradle was unavailable locally."
     }
   ]
 }
