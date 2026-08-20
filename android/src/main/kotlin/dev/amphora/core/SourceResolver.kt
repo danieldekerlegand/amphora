@@ -2,12 +2,13 @@ package dev.amphora.core
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import dev.amphora.governor.StorageGovernor
 import dev.amphora.model.SourceKind
 import dev.amphora.model.UploadJob
 import java.io.File
-import java.io.RandomAccessFile
+import java.io.FileInputStream
 import java.security.MessageDigest
 
 /**
@@ -48,37 +49,42 @@ class SourceResolver(private val context: Context) {
     }.getOrDefault(false)
 
     /**
-     * Open for byte-range reads. Prefers the original; falls back to the staged copy.
-     * `RandomAccessFile` rather than a stream, because resuming means seeking.
+     * Open for byte-range reads. The provider decides whether the descriptor is seekable at
+     * runtime; a seekable descriptor is streamed directly and is never copied to staging.
      */
-    fun open(job: UploadJob): RandomAccessFile {
-        job.stagedPath?.let { return RandomAccessFile(it, "r") }
+    fun open(job: UploadJob): SeekableSource {
+        job.stagedPath?.let { return SeekableSource.fromFile(File(it)) }
         val parsed = Uri.parse(job.sourceUri)
         if (parsed.scheme == null || parsed.scheme == "file") {
-            return RandomAccessFile(parsed.path!!, "r")
+            return SeekableSource.fromFile(File(parsed.path!!))
         }
-        // Many providers hand back a real seekable fd. Trying costs nothing and saves a full copy.
+
         val pfd = context.contentResolver.openFileDescriptor(parsed, "r")
             ?: error("cannot open ${job.sourceUri}")
-        return RandomAccessFile(pfd.fileDescriptor.let { java.io.FileDescriptor() }.let {
-            // TODO(impl): wrap the ParcelFileDescriptor without losing seekability — the current
-            //   expression drops it. Use ParcelFileDescriptor.AutoCloseInputStream + FileChannel,
-            //   or stage when the provider reports a pipe rather than a file.
-            error("seekable content:// path not yet wired")
-        }, "r")
+        return try {
+            // Pipes and sockets throw ESPIPE here. This is deliberately a probe, not a URI-scheme
+            // assumption: providers are allowed to expose either kind of descriptor.
+            check(pfd.seekTo(0) >= 0) { "provider returned an invalid seek position" }
+            SeekableSource.fromDescriptor(pfd)
+        } catch (error: Throwable) {
+            pfd.close()
+            throw NonSeekableSourceException(job.sourceUri, error)
+        }
     }
 
     /** Returns a staged file only when the source genuinely cannot be seeked. */
     fun stageIfRequired(job: UploadJob, storage: StorageGovernor): File? {
         if (job.stagedPath != null) return File(job.stagedPath)
         if (job.sourceKind == SourceKind.FILE) return null
-        return runCatching { open(job).close(); null }
+        return runCatching { open(job).use { null } }
             .getOrElse {
-                // TODO(impl): reserve via storage.reserve(job.id, job.sizeBytes), then stream the
-                //   provider into it, re-sampling pressure so a mid-copy squeeze aborts cleanly.
+                // Staging is completed by the storage-backed path in the next source story.
                 null
             }
     }
+
+    class NonSeekableSourceException(uri: String, cause: Throwable) :
+        java.io.IOException("content provider is not seekable: $uri", cause)
 
     private fun queryContent(uri: Uri): Pair<Long, String> {
         context.contentResolver.query(uri, null, null, null, null)?.use { c ->
@@ -93,4 +99,24 @@ class SourceResolver(private val context: Context) {
     }
 
     data class Probe(val kind: SourceKind, val sizeBytes: Long, val fingerprint: String)
+}
+
+/** A seekable source whose channel can serve byte ranges without creating a copy. */
+class SeekableSource private constructor(
+    private val input: FileInputStream,
+    private val descriptor: ParcelFileDescriptor? = null,
+) : AutoCloseable {
+    val channel = input.channel
+
+    override fun close() {
+        runCatching { input.close() }
+        descriptor?.close()
+    }
+
+    companion object {
+        fun fromFile(file: File) = SeekableSource(FileInputStream(file))
+
+        fun fromDescriptor(pfd: ParcelFileDescriptor): SeekableSource =
+            SeekableSource(FileInputStream(pfd.fileDescriptor), pfd)
+    }
 }

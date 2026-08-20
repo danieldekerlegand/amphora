@@ -1,5 +1,6 @@
 package dev.amphora.transport
 
+import dev.amphora.core.SeekableSource
 import dev.amphora.model.ErrorClass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -8,8 +9,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import java.io.IOException
-import java.io.RandomAccessFile
 import java.net.URI
+import java.nio.ByteBuffer
 
 /**
  * The wire layer. Speaks whichever [WireDialect] it is given.
@@ -88,7 +89,7 @@ class TusTransport(
      */
     suspend fun patch(
         uploadUrl: String,
-        source: RandomAccessFile,
+        source: SeekableSource,
         offset: Long,
         totalSize: Long,
         maxBytes: Long,
@@ -199,7 +200,7 @@ class HttpFailure(val code: Int, message: String) : Exception("$message (HTTP $c
  * from the wrong offset and be rejected with a 409 at best.
  */
 class RangeRequestBody(
-    private val source: RandomAccessFile,
+    private val source: SeekableSource,
     private val offset: Long,
     private val length: Long,
     private val contentType: MediaType,
@@ -216,8 +217,8 @@ class RangeRequestBody(
     override fun isOneShot() = true
 
     override fun writeTo(sink: BufferedSink) {
-        source.seek(offset)
-        val buf = ByteArray(BUFFER_BYTES)
+        source.channel.position(offset)
+        val buf = ByteBuffer.allocate(BUFFER_BYTES)
         while (bytesWritten < length) {
             // The deadline is the Android 15 FGS budget made concrete. It must ABORT the request,
             // never short-write it: Content-Length is already declared as `length`, so returning
@@ -227,11 +228,12 @@ class RangeRequestBody(
             if (now() >= deadlineMillis) throw SliceDeadlineReached
 
             val want = minOf(BUFFER_BYTES.toLong(), length - bytesWritten).toInt()
-            val read = source.read(buf, 0, want)
+            buf.clear().limit(want)
+            val read = source.channel.read(buf)
             // A short read before `length` means the file changed underneath us. Aborting is the
             // only safe move; padding would corrupt the upload silently.
             if (read <= 0) throw SourceTruncated
-            sink.write(buf, 0, read)
+            sink.write(buf.array(), 0, read)
             bytesWritten += read
             onProgress(offset + bytesWritten)   // coalesced downstream, not emitted per buffer (I9)
         }
