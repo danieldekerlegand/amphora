@@ -9,6 +9,8 @@ import dev.amphora.model.SourceKind
 import dev.amphora.model.UploadJob
 import java.io.File
 import java.io.FileInputStream
+import java.io.RandomAccessFile
+import java.nio.channels.Channels
 import java.security.MessageDigest
 
 /**
@@ -76,11 +78,27 @@ class SourceResolver(private val context: Context) {
     fun stageIfRequired(job: UploadJob, storage: StorageGovernor): File? {
         if (job.stagedPath != null) return File(job.stagedPath)
         if (job.sourceKind == SourceKind.FILE) return null
-        return runCatching { open(job).use { null } }
-            .getOrElse {
-                // Staging is completed by the storage-backed path in the next source story.
-                null
+
+        return try {
+            open(job).use { null }
+        } catch (_: NonSeekableSourceException) {
+            val reservation = storage.reserve(job.id, job.sizeBytes)
+            try {
+                val input = context.contentResolver.openInputStream(Uri.parse(job.sourceUri))
+                    ?: error("cannot open ${job.sourceUri}")
+                input.use { source ->
+                    RandomAccessFile(reservation.file, "rw").use { target ->
+                        target.seek(0)
+                        val copied = source.copyTo(Channels.newOutputStream(target.channel))
+                        target.setLength(copied)
+                    }
+                }
+                reservation.file
+            } catch (error: Throwable) {
+                storage.release(reservation)
+                throw error
             }
+        }
     }
 
     class NonSeekableSourceException(uri: String, cause: Throwable) :

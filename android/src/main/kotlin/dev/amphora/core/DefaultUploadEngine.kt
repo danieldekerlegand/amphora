@@ -7,6 +7,7 @@ import dev.amphora.UploadRequest
 import dev.amphora.governor.NetworkGovernor
 import dev.amphora.governor.StorageGovernor
 import dev.amphora.governor.StoragePressure
+import dev.amphora.governor.StorageReservationDenied
 import dev.amphora.model.*
 import dev.amphora.store.UploadDao
 import dev.amphora.transport.*
@@ -151,8 +152,15 @@ class DefaultUploadEngine(
 
         // Create on first run. I2: the URL is persisted by the transition before any byte moves.
         if (job.uploadUrl == null) {
-            val prepared = runCatching { prepare(job) }.getOrElse {
-                dispatch(jobId, UploadEvent.TransportError(transport.classify(it), it.message))
+            val prepared = try {
+                prepare(job)
+            } catch (error: StorageReservationDenied) {
+                // The provider cannot be streamed and the OS refused the real reservation. Keep
+                // this typed as SpaceDenied so the machine blocks instead of creating remotely.
+                dispatch(jobId, UploadEvent.SpaceDenied(error.requestedBytes))
+                return SliceOutcome.SLICE_DONE
+            } catch (error: Exception) {
+                dispatch(jobId, UploadEvent.TransportError(transport.classify(error), error.message))
                 return SliceOutcome.RETRY
             } ?: return SliceOutcome.SLICE_DONE
             job = prepared

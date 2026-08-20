@@ -34,8 +34,8 @@
         "The staged copy is removed on completion, cancel and failure.",
         "A test asserts the allocation call is actually made, not merely that staging succeeded."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Non-seekable staging calls StorageManager.allocateBytes directly; StorageGovernorTest observed one allocator call for a reservation. Denied allocation raises typed StorageReservationDenied and dispatches SpaceDenied before remote creation. Reservation/copy failures and completion/cancel/failure cleanup remove staged files. Swift build/tests green (42 passed), TypeScript typecheck green; Android Gradle unavailable locally."
     }
   ]
 }

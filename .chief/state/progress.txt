@@ -10,3 +10,13 @@ Started: Thu Aug 20 02:31:02 CDT 2026
 
 ### Learnings for future iterations
 - Android provider descriptors must be probed at runtime; URI schemes do not establish seekability. Keep non-seekable handling in `SourceResolver` so the next story can stage only after the probe fails.
+
+## US-2 — Non-seekable providers stage under a real StorageManager reservation
+- Implemented provider staging after the runtime seekability probe. Staging reserves the destination with `StorageManager.allocateBytes` before copying and uses a typed `StorageReservationDenied` error to dispatch `SpaceDenied` without creating a remote upload.
+- Added `StorageGovernorTest`, which observed one allocator call before returning a reservation.
+- Added reservation release and staged-file deletion helpers; copy failures release immediately, while state-machine completion, cancel, and failure effects remove persisted staging files.
+- Verification observed: `.chief/verify.sh` green; Swift build/tests green with 42 passed; TypeScript typecheck green; Android Gradle unavailable locally.
+- Files changed: `android/src/main/kotlin/dev/amphora/governor/StorageGovernor.kt`, `android/src/main/kotlin/dev/amphora/core/SourceResolver.kt`, `android/src/main/kotlin/dev/amphora/core/DefaultUploadEngine.kt`, plus both tasklist state files.
+
+### Learnings for future iterations
+- Android staging must reserve through `StorageManager.allocateBytes` itself; `getAllocatableBytes` is appropriate only for pressure sampling and must not gate or replace the reservation.
