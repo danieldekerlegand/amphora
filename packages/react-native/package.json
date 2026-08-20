@@ -1,0 +1,30 @@
+{
+  "name": "@amphora/react-native",
+  "version": "0.1.0",
+  "description": "React Native control surface for Amphora background uploads",
+  "license": "MIT",
+  "source": "src/index.ts",
+  "main": "lib/index.js",
+  "module": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "react-native": ">=0.76.0"
+  },
+  "devDependencies": {
+    "react-native": "0.76.9",
+    "typescript": "^5.7.2"
+  },
+  "codegenConfig": {
+    "name": "AmphoraSpec",
+    "type": "modules",
+    "jsSrcsDir": "src"
+  }
+}

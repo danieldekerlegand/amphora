@@ -1,6 +1,7 @@
 # Build output
 .build/
 build/
+lib/
 DerivedData/
 *.o
 *.swiftmodule

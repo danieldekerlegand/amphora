@@ -20,8 +20,8 @@
         "React Native codegen configuration is declared so the native spec can be generated.",
         "The peer-dependency range on `react-native` is stated and justified \u2014 TurboModules are not available in every version."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "npm install && npm run build: green; npm run typecheck with strict mode: green. Declared codegenConfig for AmphoraSpec and peer dependency react-native >=0.76.0, justified in README as the minimum TurboModule codegen surface used here."
     },
     {
       "id": "US-2",

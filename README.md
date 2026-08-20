@@ -46,7 +46,9 @@ So: **adopt the protocol, build the clients.**
 - **An Android background layer** — bounded WorkManager slices over a durable offset, designed
   around Android 15's 6h/24h `dataSync` foreground-service budget.
 - **A React Native TurboModule** that is a *control surface only*. No transfer logic in JS,
-  because JS does not run while the app is suspended.
+  because JS does not run while the app is suspended. The package declares React Native `>=0.76.0`
+  as a peer dependency because that is the minimum supported line with the TurboModule codegen
+  surface used here.
 
 ## The design commitment that retires the original bug
 
