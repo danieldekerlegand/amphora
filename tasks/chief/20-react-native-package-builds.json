@@ -32,8 +32,8 @@
         "The check names the reason in its failure message, referencing `docs/reference/platform-constraints.md` \u00a73.",
         "It runs in CI and in `.chief/verify.sh`."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "npm run check:control-surface: green; mutation test with uploadChunk failed with the documented §3 reason; .chief/verify.sh and GitHub Actions CI both run the guard."
     }
   ]
 }

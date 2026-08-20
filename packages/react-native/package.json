@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:control-surface": "node scripts/check-control-surface.js"
   },
   "peerDependencies": {
     "react-native": ">=0.76.0"
