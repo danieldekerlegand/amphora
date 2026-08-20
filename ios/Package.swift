@@ -32,5 +32,10 @@ let package = Package(
             dependencies: ["Amphora"],
             path: "Tests/AmphoraTests"
         ),
+        .executableTarget(
+            name: "AmphoraTusdIntegration",
+            dependencies: ["Amphora"],
+            path: "Tests/AmphoraTusdIntegration"
+        ),
     ]
 )

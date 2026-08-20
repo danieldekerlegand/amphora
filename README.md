@@ -94,3 +94,6 @@ seekable `content://` opening and provider staging (Android).
 
 No conformance vectors yet. Until they exist, the two state-machine ports are only as aligned as
 review makes them — that is the next thing worth doing.
+
+The real-wire tusd v2 + S3 environment and opt-in Swift/Kotlin integration checks live in
+[`docs/guides/tusd-integration.md`](docs/guides/tusd-integration.md).
