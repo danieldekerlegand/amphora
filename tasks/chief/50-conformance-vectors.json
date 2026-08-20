@@ -24,8 +24,8 @@
         "\u00a74's invariants, \u00a75's recovery transitions and \u00a76's cancel-a-job-never-seen-running case each have explicit vectors.",
         "Each vector cites the spec section it encodes, so a spec change has a findable blast radius."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests/Conformance/vectors.json: 40 unique vectors (27 transition rows plus explicit §4, §5, and §6 cases); JSON validation green. Swift build/tests green (2 path tests passed), TypeScript typecheck green; Gradle skipped because no wrapper or system Gradle is installed."
     },
     {
       "id": "US-2",

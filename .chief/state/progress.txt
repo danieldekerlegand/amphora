@@ -1,23 +1,13 @@
-# Chief Progress — 40-verify-and-ci-gates
-Started: Thu Aug 20 02:19:55 CDT 2026
+# Chief Progress — 50-conformance-vectors
+Started: Thu Aug 20 02:24:44 CDT 2026
 ---
 
-## US-1 — `.chief/verify.sh` builds and tests every target it can reach
-- Implemented `.chief/verify.sh` to run Swift build plus the executable Swift path tests, Gradle build through wrapper/system Gradle, and React Native TypeScript typecheck.
-- Missing Gradle tooling is reported as an explicit SKIPPED line naming Android build verification; reachable failures are accumulated and return exit 1.
-- Verification observed: Swift build PASS, Swift path tests PASS (2 passed), TypeScript typecheck PASS, Gradle SKIPPED. Deliberate Swift syntax break produced FAIL and exit 1.
-- Files changed: `.chief/verify.sh`, runtime/tasklist PRD status.
+## US-1 — A shared, language-neutral vector set derived from the spec
+- Added `Tests/Conformance/vectors.json` as the shared corpus, with 40 unique vectors: all 27 §2 transition-table rows plus explicit §4 invariant, §5 recovery, and §6 orphan-cancel cases.
+- Every vector includes a `spec` citation; the format is plain JSON with neutral state/event/expect records suitable for Swift and Kotlin readers.
+- Verification observed: JSON validation green; Swift build green; Swift path tests green (2 passed); TypeScript typecheck green; Gradle skipped because no wrapper or system Gradle is installed.
+- Files changed: `Tests/Conformance/vectors.json`, runtime/tasklist PRD status.
 
 ### Learnings for future iterations
-- The iOS test target is an executable (`AmphoraPathTests`), so `swift test` reports no tests; invoke it with `swift run --package-path ios AmphoraPathTests`.
-- This repository has no Gradle wrapper or system Gradle on the authoring machine, so local verification must report Android as skipped while CI handles it.
-
-## US-2 — CI builds all three targets on a runner that has the toolchains
-- Expanded `.github/workflows/ci.yml` with separate iOS, Android, and React Native jobs.
-- iOS uses macOS 14 and `-warnings-as-errors`; Android provisions Temurin JDK 17, Android SDK platform 35/build tools, and runs the required `gradle :android:assemble` step; RN retains control-surface, typecheck, and build gates.
-- Verification observed: workflow YAML parsed PASS; local Swift build with warnings-as-errors and path tests PASS (2 passed); RN control-surface, typecheck, and build PASS. Android remains CI-only because Java and Gradle are unavailable locally.
-- Files changed: `.github/workflows/ci.yml`, runtime/tasklist PRD status, git-tracked tasklist status.
-
-### Learnings for future iterations
-- CI should keep Android as a standalone job with no `continue-on-error`; local verification cannot substitute for this target when the Android toolchain is absent.
-- The Swift package can enforce warning cleanliness portably with `swift build --package-path ios -Xswiftc -warnings-as-errors`.
+- Keep the shared corpus at `Tests/Conformance/vectors.json`; both native ports already reference this path in their state-machine documentation comments.
+- The spec includes conceptual events (`Enqueue`, `AttemptsExhausted`) not represented as native event types; preserve those rows in the neutral corpus so coverage remains faithful to the normative table, and let the runner map them explicitly.

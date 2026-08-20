@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "source": "docs/reference/state-machine.md",
+  "vectors": [
+    {
+      "id": "row-01-enqueue",
+      "spec": "§2 transition table: Enqueue",
+      "given": { "state": null },
+      "event": { "type": "Enqueue" },
+      "expect": { "state": "PENDING" }
+    },
+    {
+      "id": "row-02-schedule",
+      "spec": "§2 transition table: PENDING + Schedule",
+      "given": { "state": "PENDING" },
+      "event": { "type": "Schedule" },
+      "expect": { "state": "PREPARING" }
+    },
+    {
+      "id": "row-03-source-resolved",
+      "spec": "§2 transition table: PREPARING + SourceResolved",
+      "given": { "state": "PREPARING" },
+      "event": { "type": "SourceResolved", "sizeBytes": 1000, "fingerprint": "sha256:test", "stagedPath": null },
+      "expect": { "state": "CREATING", "sizeBytes": 1000, "fingerprint": "sha256:test" }
+    },
+    {
+      "id": "row-04-source-missing",
+      "spec": "§2 transition table: PREPARING + SourceMissing",
+      "given": { "state": "PREPARING" },
+      "event": { "type": "SourceMissing" },
+      "expect": { "state": "FAILED", "errorClass": "SOURCE_GONE" }
+    },
+    {
+      "id": "row-05-space-denied",
+      "spec": "§2 transition table: PREPARING + SpaceDenied",
+      "given": { "state": "PREPARING" },
+      "event": { "type": "SpaceDenied", "needed": 1000 },
+      "expect": { "state": "BLOCKED", "blockReason": "STORAGE_LOW" }
+    },
+    {
+      "id": "row-06-remote-created",
+      "spec": "§2 transition table: CREATING + RemoteCreated; §4 I2",
+      "given": { "state": "CREATING" },
+      "event": { "type": "RemoteCreated", "uploadUrl": "https://example.test/uploads/1", "expiresAt": 2000 },
+      "expect": { "state": "UPLOADING", "uploadUrl": "https://example.test/uploads/1", "uploadExpiresAt": 2000 }
+    },
+    {
+      "id": "row-07-create-retryable-error",
+      "spec": "§2 transition table: CREATING + TransportError(retryable)",
+      "given": { "state": "CREATING", "attemptCount": 0 },
+      "event": { "type": "TransportError", "errorClass": "TRANSIENT", "detail": "timeout" },
+      "expect": { "state": "RETRY_WAIT", "attemptCount": 1 }
+    },
+    {
+      "id": "row-08-create-fatal-error",
+      "spec": "§2 transition table: CREATING + TransportError(fatal)",
+      "given": { "state": "CREATING" },
+      "event": { "type": "TransportError", "errorClass": "FATAL", "detail": "too large" },
+      "expect": { "state": "FAILED", "errorClass": "FATAL" }
+    },
+    {
+      "id": "row-09-offset-advanced",
+      "spec": "§2 transition table: UPLOADING + OffsetAdvanced; §4 I1, I7",
+      "given": { "state": "UPLOADING", "serverOffset": 0 },
+      "event": { "type": "OffsetAdvanced", "serverOffset": 500 },
+      "expect": { "state": "UPLOADING", "serverOffset": 500, "bytesTransferred": 500 }
+    },
+    {
+      "id": "row-10-transport-complete",
+      "spec": "§2 transition table: UPLOADING + TransportComplete",
+      "given": { "state": "UPLOADING" },
+      "event": { "type": "TransportComplete" },
+      "expect": { "state": "FINALIZING" }
+    },
+    {
+      "id": "row-11-upload-retryable-error",
+      "spec": "§2 transition table: UPLOADING + TransportError(retryable)",
+      "given": { "state": "UPLOADING", "attemptCount": 1 },
+      "event": { "type": "TransportError", "errorClass": "TRANSIENT", "detail": "reset" },
+      "expect": { "state": "RETRY_WAIT", "attemptCount": 2 }
+    },
+    {
+      "id": "row-12-network-lost",
+      "spec": "§2 transition table: UPLOADING + NetworkLost",
+      "given": { "state": "UPLOADING" },
+      "event": { "type": "Blocked", "blockReason": "NETWORK_UNAVAILABLE" },
+      "expect": { "state": "BLOCKED", "blockReason": "NETWORK_UNAVAILABLE" }
+    },
+    {
+      "id": "row-13-storage-low",
+      "spec": "§2 transition table: UPLOADING + StorageLow",
+      "given": { "state": "UPLOADING" },
+      "event": { "type": "Blocked", "blockReason": "STORAGE_LOW" },
+      "expect": { "state": "BLOCKED", "blockReason": "STORAGE_LOW" }
+    },
+    {
+      "id": "row-14-power-low",
+      "spec": "§2 transition table: UPLOADING + PowerLow",
+      "given": { "state": "UPLOADING" },
+      "event": { "type": "Blocked", "blockReason": "POWER_LOW" },
+      "expect": { "state": "BLOCKED", "blockReason": "POWER_LOW" }
+    },
+    {
+      "id": "row-15-pause",
+      "spec": "§2 transition table: UPLOADING + Pause; §1 PAUSED",
+      "given": { "state": "UPLOADING" },
+      "event": { "type": "Pause" },
+      "expect": { "state": "PAUSED", "pauseReason": "USER" }
+    },
+    {
+      "id": "row-16-gone",
+      "spec": "§2 transition table: UPLOADING + Gone(404|410); §1 EXPIRED",
+      "given": { "state": "UPLOADING", "uploadUrl": "https://example.test/uploads/1", "serverOffset": 500 },
+      "event": { "type": "Gone", "status": 404 },
+      "expect": { "state": "EXPIRED", "uploadUrl": null, "serverOffset": 0 }
+    },
+    {
+      "id": "row-17-offset-diverged",
+      "spec": "§2 transition table: UPLOADING + OffsetDiverged; §4 I7",
+      "given": { "state": "UPLOADING", "serverOffset": 500 },
+      "event": { "type": "OffsetDiverged", "serverOffset": 400 },
+      "expect": { "state": "EXPIRED" }
+    },
+    {
+      "id": "row-18-server-ack",
+      "spec": "§2 transition table: FINALIZING + ServerAck",
+      "given": { "state": "FINALIZING", "sizeBytes": 1000 },
+      "event": { "type": "ServerAck" },
+      "expect": { "state": "COMPLETED", "serverOffset": 1000, "bytesTransferred": 1000 }
+    },
+    {
+      "id": "row-19-finalize-retryable-error",
+      "spec": "§2 transition table: FINALIZING + TransportError(retryable)",
+      "given": { "state": "FINALIZING", "attemptCount": 1 },
+      "event": { "type": "TransportError", "errorClass": "TRANSIENT", "detail": "ack timeout" },
+      "expect": { "state": "RETRY_WAIT", "attemptCount": 2 }
+    },
+    {
+      "id": "row-20-deadline-reached",
+      "spec": "§2 transition table: RETRY_WAIT + DeadlineReached",
+      "given": { "state": "RETRY_WAIT", "nextAttemptAt": 1000 },
+      "event": { "type": "DeadlineReached" },
+      "expect": { "state": "UPLOADING" }
+    },
+    {
+      "id": "row-21-attempts-exhausted",
+      "spec": "§2 transition table: RETRY_WAIT + AttemptsExhausted",
+      "given": { "state": "RETRY_WAIT", "attemptCount": 12 },
+      "event": { "type": "AttemptsExhausted" },
+      "expect": { "state": "FAILED" }
+    },
+    {
+      "id": "row-22-gate-cleared",
+      "spec": "§2 transition table: BLOCKED + GateCleared; §1 BLOCKED",
+      "given": { "state": "BLOCKED", "blockReason": "NETWORK_UNAVAILABLE" },
+      "event": { "type": "GateCleared" },
+      "expect": { "state": "UPLOADING" }
+    },
+    {
+      "id": "row-23-resume",
+      "spec": "§2 transition table: PAUSED + Resume; §4 I1",
+      "given": { "state": "PAUSED", "pauseReason": "USER" },
+      "event": { "type": "Resume" },
+      "expect": { "state": "UPLOADING" }
+    },
+    {
+      "id": "row-24-cancel",
+      "spec": "§2 transition table: any non-terminal + Cancel; §6",
+      "given": { "state": "UPLOADING", "uploadUrl": "https://example.test/uploads/orphan" },
+      "event": { "type": "Cancel" },
+      "expect": { "state": "CANCELED", "remoteTerminated": false, "terminateRemote": true }
+    },
+    {
+      "id": "row-25-process-start",
+      "spec": "§2 transition table: any non-terminal + ProcessStart; §5",
+      "given": { "state": "UPLOADING" },
+      "event": { "type": "ProcessStart" },
+      "expect": { "state": "RECOVERING" }
+    },
+    {
+      "id": "row-26-expired-retry",
+      "spec": "§2 transition table: EXPIRED + Retry",
+      "given": { "state": "EXPIRED", "serverOffset": 500 },
+      "event": { "type": "Retry" },
+      "expect": { "state": "PENDING", "serverOffset": 0, "attemptCount": 0 }
+    },
+    {
+      "id": "row-27-failed-retry",
+      "spec": "§2 transition table: FAILED + Retry",
+      "given": { "state": "FAILED", "attemptCount": 12 },
+      "event": { "type": "Retry" },
+      "expect": { "state": "PENDING", "attemptCount": 0 }
+    },
+    {
+      "id": "invariant-i1-resume-head",
+      "spec": "§4 I1; §2 PAUSED + Resume",
+      "given": { "state": "PAUSED", "serverOffset": 500 },
+      "event": { "type": "Resume" },
+      "expect": { "state": "UPLOADING", "requiredEffects": ["HEAD_BEFORE_RESUME"] }
+    },
+    {
+      "id": "invariant-i2-persist-url",
+      "spec": "§4 I2; §2 CREATING + RemoteCreated",
+      "given": { "state": "CREATING" },
+      "event": { "type": "RemoteCreated", "uploadUrl": "https://example.test/uploads/persisted", "expiresAt": null },
+      "expect": { "state": "UPLOADING", "persistBeforeTransfer": true }
+    },
+    {
+      "id": "invariant-i4-terminal-absorbs",
+      "spec": "§4 I4",
+      "given": { "state": "COMPLETED" },
+      "event": { "type": "Resume" },
+      "expect": { "state": "COMPLETED", "noOp": true }
+    },
+    {
+      "id": "invariant-i7-offset-monotonic",
+      "spec": "§4 I7; §2 UPLOADING + OffsetAdvanced",
+      "given": { "state": "UPLOADING", "serverOffset": 500 },
+      "event": { "type": "OffsetAdvanced", "serverOffset": 499 },
+      "expect": { "state": "EXPIRED" }
+    },
+    {
+      "id": "recovery-reaches-uploading",
+      "spec": "§5 recovery algorithm",
+      "given": { "state": "RECOVERING", "sizeBytes": 1000, "serverOffset": 0 },
+      "event": { "type": "OffsetAdvanced", "serverOffset": 500 },
+      "expect": { "state": "UPLOADING", "serverOffset": 500 }
+    },
+    {
+      "id": "recovery-reaches-finalizing",
+      "spec": "§5 recovery algorithm",
+      "given": { "state": "RECOVERING", "sizeBytes": 1000, "serverOffset": 0 },
+      "event": { "type": "OffsetAdvanced", "serverOffset": 1000 },
+      "expect": { "state": "FINALIZING", "serverOffset": 1000 }
+    },
+    {
+      "id": "recovery-source-gone",
+      "spec": "§5 recovery algorithm; §2 PREPARING + SourceMissing",
+      "given": { "state": "RECOVERING" },
+      "event": { "type": "SourceMissing" },
+      "expect": { "state": "FAILED", "errorClass": "SOURCE_GONE" }
+    },
+    {
+      "id": "recovery-resource-gone",
+      "spec": "§5 recovery algorithm; §2 UPLOADING + Gone",
+      "given": { "state": "RECOVERING", "uploadUrl": "https://example.test/uploads/gone" },
+      "event": { "type": "Gone", "status": 410 },
+      "expect": { "state": "EXPIRED" }
+    },
+    {
+      "id": "recovery-blocked",
+      "spec": "§5 recovery algorithm; §2 BLOCKED",
+      "given": { "state": "RECOVERING" },
+      "event": { "type": "Blocked", "blockReason": "NETWORK_UNAVAILABLE" },
+      "expect": { "state": "BLOCKED", "blockReason": "NETWORK_UNAVAILABLE" }
+    },
+    {
+      "id": "recovery-paused",
+      "spec": "§5 recovery algorithm; §2 PAUSED + Pause",
+      "given": { "state": "RECOVERING" },
+      "event": { "type": "Pause" },
+      "expect": { "state": "PAUSED", "pauseReason": "USER" }
+    },
+    {
+      "id": "recovery-retry-wait",
+      "spec": "§5 recovery algorithm; §2 RETRY_WAIT",
+      "given": { "state": "RECOVERING", "attemptCount": 1 },
+      "event": { "type": "TransportError", "errorClass": "TRANSIENT", "detail": "timeout" },
+      "expect": { "state": "RETRY_WAIT", "attemptCount": 2 }
+    },
+    {
+      "id": "cancel-never-seen-running",
+      "spec": "§6 cancelation of a job the app has never seen running; §4 I2",
+      "given": { "state": "PREPARING", "uploadUrl": "https://example.test/uploads/orphaned", "remoteTerminated": false },
+      "event": { "type": "Cancel" },
+      "expect": { "state": "CANCELED", "remoteTerminated": false, "terminateRemote": true }
+    },
+    {
+      "id": "cancel-offline-cleanup-retry",
+      "spec": "§6 cancelation of a job the app has never seen running",
+      "given": { "state": "CANCELED", "uploadUrl": "https://example.test/uploads/offline", "remoteTerminated": false },
+      "event": { "type": "ProcessStart" },
+      "expect": { "state": "CANCELED", "noOp": true, "cleanupPending": true }
+    }
+  ]
+}
