@@ -25,6 +25,7 @@ sealed interface UploadEvent {
     data class Blocked(val reason: BlockReason) : UploadEvent
     data object GateCleared : UploadEvent
     data object DeadlineReached : UploadEvent
+    data object AttemptsExhausted : UploadEvent
     data class SpaceDenied(val needed: Long) : UploadEvent
     data object ProcessStart : UploadEvent
 }
