@@ -21,8 +21,8 @@
         "Durability is proven: a store written, released, and re-opened returns the same jobs.",
         "`swift build` stays at zero errors and zero warnings."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "swift build: green, 0 errors and 0 warnings. SQLiteUploadStore implements all 14 methods with conditional SQL leases, durable JSON payloads, resume-data storage, filtering, and pruning; concurrent lease acquisition is a single-winner compare-and-set and reopening the same database reads persisted rows."
     },
     {
       "id": "US-2",

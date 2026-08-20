@@ -22,6 +22,10 @@ let package = Package(
         .library(name: "Amphora", targets: ["Amphora"]),
     ],
     targets: [
-        .target(name: "Amphora", path: "Sources/Amphora"),
+        .target(
+            name: "Amphora",
+            path: "Sources/Amphora",
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
     ]
 )
