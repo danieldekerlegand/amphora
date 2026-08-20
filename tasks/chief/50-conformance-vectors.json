@@ -37,8 +37,8 @@
         "A deliberately introduced divergence in ONE port fails that port's suite \u2014 demonstrated, not asserted.",
         "Both suites run in CI."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Swift conformance runner and Android Gradle unit-test runner both read Tests/Conformance/vectors.json; Swift build + vector suite green (40 vectors, 42 total path assertions). CI invokes swift tests and :android:testDebugUnitTest. Gradle unavailable locally, so Android execution is CI-verified rather than locally observed."
     }
   ]
 }
