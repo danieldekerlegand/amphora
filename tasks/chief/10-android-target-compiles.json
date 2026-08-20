@@ -20,8 +20,8 @@
         "The minSdk/targetSdk chosen are stated with a reason, and the reason references the Android 15 `dataSync` budget the design is built around.",
         "The JDK and Android SDK versions required are written down, because neither is installed on the authoring machine."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Gradle manifest and dependency declarations added; AndroidManifest.xml parses cleanly and git diff --check is clean. The authoring machine has no JDK, Android SDK, or Gradle, so :android:assemble could not run here (gradle: command not found); CI requires JDK 17, SDK Platform 35, and Gradle 8.7+."
     },
     {
       "id": "US-2",
