@@ -1,9 +1,14 @@
 package dev.amphora.work
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import androidx.work.*
 import dev.amphora.model.*
 import dev.amphora.governor.NetworkPolicy
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
@@ -59,10 +64,12 @@ class UploadWorker(
      * Android 15 calls this when the FGS budget expires mid-run. A few seconds to stop cleanly;
      * failing to is a RemoteServiceException. Persist offset, block the job, get out.
      */
-    override suspend fun onStopped() {
-        val deps = AmphoraGraph.of(applicationContext)
-        deps.engine.flushOffset(jobId)
-        deps.dao.releaseLease(jobId, runnerToken)
+    override fun onStopped() {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val deps = AmphoraGraph.of(applicationContext)
+            deps.engine.flushOffset(jobId)
+            deps.dao.releaseLease(jobId, runnerToken)
+        }
     }
 
     private fun SliceOutcome.toWorkResult(): Result = when (this) {
@@ -102,6 +109,17 @@ class UploadWorker(
         fun enqueue(context: Context, jobId: String, policy: NetworkPolicy, requiresCharging: Boolean) {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 tag(jobId), ExistingWorkPolicy.KEEP, request(jobId, policy, requiresCharging),
+            )
+        }
+
+        fun enqueueDelayed(context: Context, jobId: String, delayMillis: Long) {
+            val work = OneTimeWorkRequestBuilder<UploadWorker>()
+                .addTag(tag(jobId))
+                .setInputData(workDataOf(KEY_JOB_ID to jobId))
+                .setInitialDelay(delayMillis.coerceAtLeast(0L), java.util.concurrent.TimeUnit.MILLISECONDS)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                tag(jobId), ExistingWorkPolicy.REPLACE, work,
             )
         }
     }

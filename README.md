@@ -78,18 +78,19 @@ manifest surfaced five real defects, since fixed — three redundant optional re
 `try?` had already flattened `store.get`'s `UploadJob?`, and two actor-isolated `StorageGovernor`
 calls made without `await`. All five would have failed on iOS too.
 
-**Android still has no build manifest** — no `build.gradle`, so the same "no project to compile"
-gap remains there, on top of the unwritten symbols listed below. Nothing about the Kotlin has been
-compiler-checked.
+**Android has a Gradle library manifest** with the Room, WorkManager, coroutines, OkHttp, and
+AndroidX dependencies used by the Kotlin sources. The graph, Room enum converters, delayed retry
+work, and `dataSync` foreground notification are also implemented. The target is configured for
+JDK 17, Android SDK Platform 35, and Android Gradle Plugin 8.6.1; the local authoring machine lacks
+Gradle and the Android SDK, so the Android build still needs to run in CI or an Android
+ development environment.
 
 Implemented: both state-machine ports, both engines, both reconcilers, the wire layer in both
 dialects (create / head / append / terminate), the governors' policy logic, the iOS
 background-session delegate and task re-identification, and the RN control surface.
 
 Stubbed: `UploadStore`'s SQLite backing (iOS), `PHAsset` export and remainder writing (iOS),
-seekable `content://` opening and provider staging (Android). Android also still references
-`AmphoraGraph`, `EnumConverters`, `UploadWorker.enqueueDelayed`, and a notification builder that
-are not yet written — so the Android target cannot compile even once it has a `build.gradle`.
+seekable `content://` opening and provider staging (Android).
 
 No conformance vectors yet. Until they exist, the two state-machine ports are only as aligned as
 review makes them — that is the next thing worth doing.
