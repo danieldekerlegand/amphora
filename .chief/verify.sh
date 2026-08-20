@@ -13,9 +13,11 @@ changed="$(git diff --name-only "$CHIEF_BASE_BRANCH"...HEAD)"
 [ -z "$changed" ] && { echo "verify: no diff vs $CHIEF_BASE_BRANCH"; exit 0; }
 
 # --- EDIT ME: run the checks relevant to what the branch changed ---
-# make test        || exit 1
-# npm test         || exit 1
-# uv run pytest -q || exit 1
+# The RN spec is intentionally a control surface only; keep this guard here as
+# well as in CI so a future transfer helper cannot enter JavaScript unnoticed.
+(
+  cd packages/react-native && npm run check:control-surface
+) || exit 1
 
 # --- OPTIONAL: the code-quality RATCHET (a second, MEASURED axis) -------------
 # The checks above are a pass/fail test oracle — they answer "did the gates exit
