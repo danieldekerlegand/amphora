@@ -35,8 +35,8 @@
         "The staged copy is removed on completion, cancel AND failure \u2014 asserted for all three.",
         "A test covers a PHAsset source end to end against a transport double."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "./.chief/verify.sh green: Swift build, Swift path tests 44 passed, and TypeScript typecheck passed; PHAsset export now uses PHAssetResourceManager under a reservation with failure cleanup and state-machine completion/cancel cleanup."
     }
   ]
 }

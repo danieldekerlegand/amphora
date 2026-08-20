@@ -9,3 +9,11 @@ Implemented chunked FileHandle range copying in `StorageGovernor`, with injected
 Files changed: `ios/Sources/Amphora/Governor/StorageGovernor.swift`, `ios/Tests/AmphoraTests/UploadPathTests.swift`, runtime and tracked PRDs.
 
 Learnings for future iterations: `StorageGovernor` is an actor, so direct tests must be async and capacity behavior is best exercised through its `@Sendable` provider; run the Swift package checks from the repository root so conformance vectors resolve correctly.
+
+## US-2 — PHAsset export writes a staged copy under a reservation
+
+Implemented Photos asset export in `StorageGovernor` using `PHAssetResourceManager.writeData` with network access allowed for iCloud-backed originals. The export resolves the asset resource, uses an existing reservation or acquires one, and releases/removes the staged path on export failure; the existing state-machine effects remove staged paths on completion and cancel.
+
+Files changed: `ios/Sources/Amphora/Governor/StorageGovernor.swift`, runtime and tracked PRDs.
+
+Learnings for future iterations: Photos `writeData(for:toFile:)` returns no request identifier, so cancellation cleanup is owned by the state machine's reservation-release and staged-file-delete effects; export failures clean up synchronously at the governor boundary.
