@@ -20,7 +20,16 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * See docs/reference/platform-constraints.md §2.
  */
-class StorageGovernor(private val context: Context) {
+fun interface SpaceAllocator {
+    fun allocate(fd: java.io.FileDescriptor, bytes: Long)
+}
+
+class StorageGovernor(
+    private val context: Context,
+    allocator: SpaceAllocator? = null,
+) {
+
+    private val allocator = allocator ?: SpaceAllocator { fd, bytes -> storageManager.allocateBytes(fd, bytes) }
 
     /** Never let staging drive the device to zero; leave the user room to breathe. */
     private val headroomBytes = 512L * 1024 * 1024
@@ -44,26 +53,37 @@ class StorageGovernor(private val context: Context) {
     }
 
     /**
-     * Reserve space for a staged copy. Returns null when the device genuinely cannot host it,
-     * which the state machine turns into BLOCKED(STORAGE_LOW) rather than a failure — free space
-     * on a phone is a moving target and this job may well run in ten minutes.
+     * Reserve space for a staged copy. Allocation failure is typed so the caller cannot
+     * accidentally continue with an unreserved copy.
      */
     @RequiresApi(Build.VERSION_CODES.O)
-    fun reserve(jobId: String, bytes: Long): Reservation? {
-        if (bytes + headroomBytes > allocatableBytes()) return null
-
+    fun reserve(jobId: String, bytes: Long): Reservation {
         // Application-private storage, not the cache dir: cache is exactly what gets reclaimed.
         val target = File(stagingDir(), "$jobId.part")
-        return runCatching {
+        return try {
             RandomAccessFile(target, "rw").use { raf ->
-                storageManager.allocateBytes(raf.fd, bytes)
+                // Do not replace this with getAllocatableBytes(): that only observes space and
+                // does not protect the staged upload from cache eviction.
+                allocator.allocate(raf.fd, bytes)
             }
             Reservation(jobId, target, bytes, System.currentTimeMillis())
-        }.getOrNull()
+        } catch (error: Exception) {
+            target.delete()
+            throw StorageReservationDenied(jobId, bytes, error)
+        }
     }
 
     fun release(reservation: Reservation) {
         reservation.file.delete()
+    }
+
+    /** Release a reservation after the job row has been persisted or on a failed staging copy. */
+    fun releaseFor(jobId: String) {
+        File(stagingDir(), "$jobId.part").delete()
+    }
+
+    fun deleteStaged(path: String) {
+        File(path).delete()
     }
 
     /** Staged copies live here. Excluded from backup via the manifest's backup rules. */
@@ -100,5 +120,11 @@ class StorageGovernor(private val context: Context) {
 
     data class Reservation(val jobId: String, val file: File, val bytes: Long, val acquiredAt: Long)
 }
+
+class StorageReservationDenied(
+    val jobId: String,
+    val requestedBytes: Long,
+    cause: Throwable,
+) : java.io.IOException("storage reservation denied for $jobId ($requestedBytes bytes)", cause)
 
 enum class StoragePressure { OK, LOW, CRITICAL }
