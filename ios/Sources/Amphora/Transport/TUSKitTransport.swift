@@ -67,10 +67,10 @@ public struct TUSKitTransport: UploadTransport {
             stagedRemainder = nil
         } else {
             let needed = job.sizeBytes - offset
-            guard let reservation = try storage.reserveRemainder(jobId: job.id, bytes: needed) else {
+            guard let reservation = try await storage.reserveRemainder(jobId: job.id, bytes: needed) else {
                 throw TransportError.remainderStagingDenied(needed: needed)
             }
-            try storage.writeRemainder(from: sourceURL, offset: offset, to: reservation.url)
+            try await storage.writeRemainder(from: sourceURL, offset: offset, to: reservation.url)
             bodyURL = reservation.url
             stagedRemainder = reservation.url.path
         }

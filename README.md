@@ -69,6 +69,17 @@ packages/react-native/   TurboModule spec and JS control surface
 
 Specification plus Android, iOS, and RN skeletons. Nothing moves bytes yet.
 
+**iOS builds clean as of 2026-08-20** — `swift build` from `ios/`, zero errors and zero warnings.
+It previously could not be built at all: there was no `Package.swift`, so "it does not compile"
+was not a statement about the code, it was the absence of a project to compile. Adding the
+manifest surfaced five real defects, since fixed — three redundant optional re-bindings where
+`try?` had already flattened `store.get`'s `UploadJob?`, and two actor-isolated `StorageGovernor`
+calls made without `await`. All five would have failed on iOS too.
+
+**Android still has no build manifest** — no `build.gradle`, so the same "no project to compile"
+gap remains there, on top of the unwritten symbols listed below. Nothing about the Kotlin has been
+compiler-checked.
+
 Implemented: both state-machine ports, both engines, both reconcilers, the wire layer in both
 dialects (create / head / append / terminate), the governors' policy logic, the iOS
 background-session delegate and task re-identification, and the RN control surface.
@@ -76,7 +87,7 @@ background-session delegate and task re-identification, and the RN control surfa
 Stubbed: `UploadStore`'s SQLite backing (iOS), `PHAsset` export and remainder writing (iOS),
 seekable `content://` opening and provider staging (Android). Android also still references
 `AmphoraGraph`, `EnumConverters`, `UploadWorker.enqueueDelayed`, and a notification builder that
-are not yet written, so neither target compiles as-is.
+are not yet written — so the Android target cannot compile even once it has a `build.gradle`.
 
 No conformance vectors yet. Until they exist, the two state-machine ports are only as aligned as
 review makes them — that is the next thing worth doing.

@@ -25,7 +25,7 @@ public actor Reconciler {
         transport: any UploadTransport,
         engine: any UploadEngine,
         storage: StorageGovernor,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.store = store
         self.sessionManager = sessionManager

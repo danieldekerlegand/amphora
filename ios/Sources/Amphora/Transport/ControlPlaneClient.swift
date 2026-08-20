@@ -17,7 +17,7 @@ public struct ControlPlaneClient: Sendable {
         session: URLSession = .shared,
         dialect: any WireDialect,
         tokenProvider: @escaping @Sendable () async -> String? = { nil },
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.session = session
         self.dialect = dialect

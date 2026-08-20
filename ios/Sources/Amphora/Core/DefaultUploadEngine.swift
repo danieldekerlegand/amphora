@@ -35,7 +35,7 @@ public actor DefaultUploadEngine: UploadEngine {
         network: NetworkGovernor,
         sources: SourceResolver,
         emitter: any EventEmitter,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.store = store
         self.sessionManager = sessionManager
@@ -107,7 +107,7 @@ public actor DefaultUploadEngine: UploadEngine {
     // no two events can interleave a read-modify-write on the same row.
 
     public func dispatch(jobId: String, event: UploadEvent) async {
-        guard let current = try? await store.get(id: jobId), let current else { return }
+        guard let current = try? await store.get(id: jobId) else { return }
 
         let transition = UploadStateMachine.reduce(current, event, now: now())
         if transition.job != current {
@@ -167,7 +167,7 @@ public actor DefaultUploadEngine: UploadEngine {
             break   // startTransfer always HEADs first
 
         case .emit:
-            if let fresh = try? await store.get(id: job.id), let fresh {
+            if let fresh = try? await store.get(id: job.id) {
                 emitter.stateChanged(fresh)
             }
         }
@@ -203,7 +203,7 @@ public actor DefaultUploadEngine: UploadEngine {
                 await dispatch(jobId: job.id, event: .transportError(classify(error), detail: "\(error)"))
                 return
             }
-            guard let refreshed = try? await store.get(id: job.id), let refreshed else { return }
+            guard let refreshed = try? await store.get(id: job.id) else { return }
             current = refreshed
         }
 
