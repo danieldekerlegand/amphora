@@ -70,6 +70,7 @@ public enum TransportError: Error, Equatable {
     case missingUploadURL
     case missingLocation
     case missingOffset
+    case unexpectedOffset(actual: Int64)
     case badResponse
     case gone
     case http(Int)

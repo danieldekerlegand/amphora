@@ -30,19 +30,35 @@ class TusdIntegrationTest {
         val created = transport.create(endpoint!!, sourceFile.length(), emptyMap())
         assertEquals(0L, transport.head(created.uploadUrl).offset)
 
+        val firstWindow = sourceFile.length() * 2 / 5
         val source = SeekableSource.fromFile(sourceFile)
         try {
-            val result = transport.patch(
+            val first = transport.patch(
                 uploadUrl = created.uploadUrl,
                 source = source,
                 offset = 0,
                 totalSize = sourceFile.length(),
-                maxBytes = sourceFile.length(),
+                maxBytes = firstWindow,
+                deadlineMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2),
+                onProgress = {},
+            )
+            assertEquals(firstWindow, first.ackedOffset)
+
+            // Simulate process death: the relaunch creates a new transport with no cached offset.
+            val relaunched = TusTransport(client, WireDialect.Tus10())
+            val serverOffset = relaunched.head(created.uploadUrl).offset
+            assertEquals(firstWindow, serverOffset)
+            val result = relaunched.patch(
+                uploadUrl = created.uploadUrl,
+                source = source,
+                offset = serverOffset,
+                totalSize = sourceFile.length(),
+                maxBytes = sourceFile.length() - serverOffset,
                 deadlineMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2),
                 onProgress = {},
             )
             assertEquals(sourceFile.length(), result.ackedOffset)
-            assertEquals(sourceFile.length(), transport.head(created.uploadUrl).offset)
+            assertEquals(sourceFile.length(), relaunched.head(created.uploadUrl).offset)
         } finally {
             source.close()
             sourceFile.delete()

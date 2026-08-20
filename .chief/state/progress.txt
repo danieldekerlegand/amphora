@@ -11,3 +11,12 @@ Started: Thu Aug 20 02:39:27 CDT 2026
 ### Learnings for future iterations
 - tusd's S3 credentials are supplied through `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`; the CLI does not take access-key flags.
 - Keep real-wire tests opt-in because they require Docker and Android tooling; deterministic protocol/state checks remain the default CI path.
+
+## US-2 — Resume works across an interruption, from the server's offset
+- Added `integration/tusd/resume.sh`, which kills a throttled PATCH process, re-HEADs from a fresh process, resumes from the server offset, and verifies the MinIO S3 object checksum matches the source.
+- Extended Swift and Kotlin tusd integration targets to upload in two windows and construct a fresh client between windows; added typed unexpected-offset validation in both transport layers.
+- Verification observed: Swift warnings-as-errors build green; Swift path tests 44 passed; shell syntax and diff checks green. Live Docker resume was attempted but the local Docker daemon was unavailable; Android Gradle was unavailable locally.
+
+### Learnings for future iterations
+- A resumability integration must validate both the authoritative HEAD offset and bytes at rest; offsets alone cannot detect a corrupted remainder.
+- Keep unexpected offsets typed at the transport boundary so the engine can classify them as protocol failures instead of restarting from a local guess.

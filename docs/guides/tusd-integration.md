@@ -18,6 +18,19 @@ The script creates a deterministic 3 MiB source, then performs `POST` (create), 
 with an unpinned `Tus-Resumable` value, and performs a second `HEAD` to prove termination returned
 404 or 410. The Compose teardown removes the disposable MinIO volume on exit.
 
+## Verify process-death resume and bytes at rest
+
+```sh
+integration/tusd/resume.sh
+```
+
+This opt-in check kills a deliberately throttled PATCH process after tusd has acknowledged a
+non-zero partial offset. A fresh process performs `HEAD`, resumes from that server offset, and then
+reads the tusd S3 object through MinIO to compare SHA-256 with the deterministic source. The Swift
+and Kotlin integration targets perform the same two-stage exchange by constructing a fresh client
+between PATCH requests; both also reject an out-of-range server offset as a typed protocol error.
+The script requires the same Docker/Compose, `curl`, Python 3, and `shasum` prerequisites.
+
 ## Run the platform clients
 
 The server endpoint is `http://127.0.0.1:8080/files/`. Keep the Compose stack running in one
