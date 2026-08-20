@@ -120,10 +120,36 @@ public actor StorageGovernor {
     /// Export a `PHAsset` to a real file. Unavoidable — Photos assets are not seekable file URLs,
     /// and this is the one source kind that always costs a full copy.
     public func exportPhotosAsset(_ localIdentifier: String, jobId: String) async throws -> URL {
-        // TODO(impl): PHAssetResourceManager.writeData(for:toFile:) with
-        //   `isNetworkAccessAllowed = true` for iCloud-offloaded originals, reserving first.
-        //   Note this can itself take minutes for a large 4K video and must be cancelable.
-        fatalError("unimplemented")
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject,
+              let resource = PHAssetResource.assetResources(for: asset).first else {
+            throw StorageError.exportFailed
+        }
+
+        let bytes = Self.resourceSize(resource)
+        let reservation: Reservation
+        if let existing = reservations[jobId] {
+            reservation = existing
+        } else {
+            guard let acquired = try reserveRemainder(jobId: jobId, bytes: bytes) else {
+                throw StorageError.stagingDenied
+            }
+            reservation = acquired
+        }
+
+        try? FileManager.default.removeItem(at: reservation.url)
+        do {
+            try await PhotosResourceExporter().write(resource: resource, to: reservation.url)
+            return reservation.url
+        } catch {
+            release(jobId: jobId)
+            throw StorageError.exportFailed
+        }
+    }
+
+    private static func resourceSize(_ resource: PHAssetResource) -> Int64 {
+        if let size = resource.value(forKey: "fileSize") as? Int64 { return size }
+        if let size = resource.value(forKey: "fileSize") as? NSNumber { return size.int64Value }
+        return 0
     }
 
     /// Reclaim staged files with no owning job row. Crash-path cleanup for state-machine I5;
@@ -147,5 +173,22 @@ public actor StorageGovernor {
     }
 }
 
+private struct PhotosResourceExporter: Sendable {
+    func write(resource: PHAssetResource, to url: URL) async throws {
+        let manager = PHAssetResourceManager.default()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let options = PHAssetResourceRequestOptions()
+            options.isNetworkAccessAllowed = true
+            manager.writeData(for: resource, toFile: url, options: options) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+}
+
 public enum StoragePressure: Sendable { case ok, low, critical }
-public enum StorageError: Error { case pressureRose, exportFailed, invalidSourceRange }
+public enum StorageError: Error { case pressureRose, exportFailed, stagingDenied, invalidSourceRange }
