@@ -1,5 +1,5 @@
 # Chief Progress — 70-android-completes-content-sources
-Started: Thu Aug 20 02:31:02 CDT 2026
+Started: Thu Aug 20 02:37:21 CDT 2026
 ---
 
 ## US-1 — A seekable content:// source streams without staging
@@ -7,9 +7,6 @@ Started: Thu Aug 20 02:31:02 CDT 2026
 - Updated the range request body to read byte windows from the generic seekable channel, preserving resumable range uploads for both files and provider descriptors.
 - Verification observed: `.chief/verify.sh` green; Swift build/tests green with 42 passed; TypeScript typecheck green; Android Gradle skipped because neither Gradle nor a wrapper is available locally.
 - Files changed: `android/src/main/kotlin/dev/amphora/core/SourceResolver.kt`, `android/src/main/kotlin/dev/amphora/transport/TusTransport.kt`, `android/src/main/kotlin/dev/amphora/core/DefaultUploadEngine.kt`.
-
-### Learnings for future iterations
-- Android provider descriptors must be probed at runtime; URI schemes do not establish seekability. Keep non-seekable handling in `SourceResolver` so the next story can stage only after the probe fails.
 
 ## US-2 — Non-seekable providers stage under a real StorageManager reservation
 - Implemented provider staging after the runtime seekability probe. Staging reserves the destination with `StorageManager.allocateBytes` before copying and uses a typed `StorageReservationDenied` error to dispatch `SpaceDenied` without creating a remote upload.
@@ -19,4 +16,49 @@ Started: Thu Aug 20 02:31:02 CDT 2026
 - Files changed: `android/src/main/kotlin/dev/amphora/governor/StorageGovernor.kt`, `android/src/main/kotlin/dev/amphora/core/SourceResolver.kt`, `android/src/main/kotlin/dev/amphora/core/DefaultUploadEngine.kt`, plus both tasklist state files.
 
 ### Learnings for future iterations
+- Android provider descriptors must be probed at runtime; URI schemes do not establish seekability. Keep non-seekable handling in `SourceResolver` so non-seekable staging occurs only after the probe fails.
 - Android staging must reserve through `StorageManager.allocateBytes` itself; `getAllocatableBytes` is appropriate only for pressure sampling and must not gate or replace the reservation.
+
+## ⚠️ BASE INTEGRATION REQUIRED — do this FIRST, before any user story
+
+`chief/70-android-completes-content-sources` is **5 commit(s) behind** its base `main` (@87f7c48) and
+chief's automatic rebase onto that base CONFLICTS. The rebase was aborted, so
+your branch is exactly as it was and nothing is lost — but it cannot merge
+until the base is integrated, and every commit that lands on `main` while
+this is unresolved makes it worse.
+
+**Your first task this iteration is to integrate the base yourself:**
+
+1. `git rebase main` in this worktree.
+2. At each stop, resolve the conflicts keeping BOTH sides' intent — the
+   `main` side is already-merged work, so never discard it, and never
+   discard your own — then `git add <files>` and `git rebase --continue`.
+   `git rebase --abort` returns you to exactly this state if you need it.
+3. Re-run the project's quality gates and make them green.
+
+Rebase, not `git merge main`: chief rebases this branch again at merge time,
+and a rebase drops merge commits and replays the originals — a resolution
+recorded in a merge commit would be thrown away and this conflict would come
+straight back. Resolving inside the rebase puts the fix in your own commits.
+
+Then continue the normal loop: pick the highest-priority story with
+`passes:false` and implement it. The integration is NOT a user story — do not
+flip any story's `passes` for it, and do not report completion until the
+stories themselves are really done.
+
+## Conflicting paths
+- .chief/state/prd.json
+- .chief/state/progress.txt
+
+base: main @87f7c48 · behind: 5 commit(s) · branch: chief/70-android-completes-content-sources
+(full note: .chief/state/INTEGRATE-BASE.md)
+
+## Base integration and verification
+
+Rebased `chief/70-android-completes-content-sources` onto `main` at `87f7c48`, resolving the runtime state conflicts in favor of the Android tasklist and preserving the base branch's work. The branch now contains the rebased Android commits without a merge commit.
+
+Verification observed: `.chief/verify.sh` passed Swift build and Swift tests (44 passed), and TypeScript typecheck; Gradle was skipped because neither an Android Gradle wrapper nor a system Gradle command is available locally.
+
+### Learnings for future iterations
+- `.chief/state` is ignored, so conflict resolutions and runtime state updates require `git add -f`; the tracked tasklist under `tasks/chief/` remains separately versioned.
+- When rebasing a task branch whose runtime state conflicts with another task's state on `main`, preserve the current task's branchName, scope, stories, and notes, then reapply the runtime progress note after the rebase.
