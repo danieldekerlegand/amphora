@@ -22,8 +22,8 @@
         "Free space is re-sampled during the write, and a mid-write shortfall aborts cleanly with a typed error rather than a partial file left behind.",
         "A test simulates free space collapsing mid-write and asserts the abort path and the cleanup."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "swift build and .chief/verify.sh green; AmphoraPathTests reported 44 passed, including offset streaming and mid-write pressureRose cleanup."
     },
     {
       "id": "US-2",

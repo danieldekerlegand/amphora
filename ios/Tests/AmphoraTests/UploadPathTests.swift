@@ -6,8 +6,10 @@ struct UploadPathTests {
     static func main() async throws {
         try await plainFileUploadRunsCreateAppendCompleteInOrder()
         try await cancelDeletesStagedFile()
+        try await remainderStreamsFromOffset()
+        try await remainderAbortsAndCleansUpWhenPressureRises()
         try conformanceVectors()
-        print("Amphora path tests: 42 passed")
+        print("Amphora path tests: 44 passed")
     }
 
     private static func plainFileUploadRunsCreateAppendCompleteInOrder() async throws {
@@ -52,6 +54,30 @@ struct UploadPathTests {
         precondition(canceled?.state == .canceled)
     }
 
+    private static func remainderStreamsFromOffset() async throws {
+        let source = try temporaryFile(contents: Data("0123456789".utf8))
+        let destination = temporaryURL()
+        let storage = StorageGovernor(capacityProvider: { Int64.max })
+
+        try await storage.writeRemainder(from: source, offset: 4, to: destination)
+        let remainder = try Data(contentsOf: destination)
+        precondition(remainder == Data("456789".utf8))
+    }
+
+    private static func remainderAbortsAndCleansUpWhenPressureRises() async throws {
+        let source = try temporaryFile(contents: Data(repeating: 7, count: 2 * 1024 * 1024))
+        let destination = temporaryURL()
+        let capacity = CapacityProbe(values: [Int64.max, Int64.max, 0])
+        let storage = StorageGovernor(capacityProvider: { capacity.next() })
+
+        do {
+            try await storage.writeRemainder(from: source, offset: 0, to: destination)
+            preconditionFailure("remainder write should abort when pressure rises")
+        } catch StorageError.pressureRose {
+            precondition(!FileManager.default.fileExists(atPath: destination.path))
+        }
+    }
+
     private static func makeEngine(store: any UploadStore, transport: RecordingTransport) -> DefaultUploadEngine {
         let storage = StorageGovernor()
         let network = NetworkGovernor(initialStatus: .unrestricted)
@@ -77,9 +103,25 @@ struct UploadPathTests {
     }
 
     private static func temporaryFile(contents: Data) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("amphora-test-\(UUID().uuidString).bin")
+        let url = temporaryURL()
         try contents.write(to: url)
         return url
+    }
+
+    private static func temporaryURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("amphora-test-\(UUID().uuidString).bin")
+    }
+}
+
+private final class CapacityProbe: @unchecked Sendable {
+    private var values: [Int64]
+
+    init(values: [Int64]) {
+        self.values = values
+    }
+
+    func next() -> Int64 {
+        values.isEmpty ? 0 : values.removeFirst()
     }
 }
 

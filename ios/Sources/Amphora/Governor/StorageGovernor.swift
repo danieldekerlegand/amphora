@@ -12,17 +12,22 @@ public actor StorageGovernor {
     /// Never drive the device to zero; leave the user room to breathe.
     private let headroom: Int64 = 512 * 1024 * 1024
 
+    private let capacityProvider: @Sendable () -> Int64
     private var reservations: [String: Reservation] = [:]
     private var lastSample: StoragePressure = .ok
 
-    public init() {}
+    public init(capacityProvider: @escaping @Sendable () -> Int64 = {
+        let url = URL(fileURLWithPath: NSHomeDirectory())
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return Int64(values?.volumeAvailableCapacityForImportantUsage ?? 0)
+    }) {
+        self.capacityProvider = capacityProvider
+    }
 
     /// The number Apple tells you to use for content the user asked for and expects to keep —
     /// as opposed to `volumeAvailableCapacityForOpportunisticUsage`, which is for prefetching.
     public func availableForImportantUsage() -> Int64 {
-        let url = URL(fileURLWithPath: NSHomeDirectory())
-        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        return Int64(values?.volumeAvailableCapacityForImportantUsage ?? 0)
+        capacityProvider()
     }
 
     public func sample() -> StoragePressure {
@@ -57,9 +62,39 @@ public actor StorageGovernor {
     /// Copies `[offset, end)` out of the source. Chunked so a low-storage signal mid-write aborts
     /// promptly instead of after gigabytes.
     public func writeRemainder(from source: URL, offset: Int64, to destination: URL) throws {
-        // TODO(impl): FileHandle seek + chunked read/write, re-sampling pressure every N MB and
-        //   throwing `StorageError.pressureRose` so the caller can block the job cleanly.
-        fatalError("unimplemented")
+        let input = try FileHandle(forReadingFrom: source)
+        var output: FileHandle?
+        var completed = false
+        defer {
+            try? input.close()
+            try? output?.close()
+            if !completed { try? FileManager.default.removeItem(at: destination) }
+        }
+
+        let end = input.seekToEndOfFile()
+        guard offset >= 0, UInt64(offset) <= end else { throw StorageError.invalidSourceRange }
+        try input.seek(toOffset: UInt64(offset))
+
+        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+            throw StorageError.exportFailed
+        }
+        output = try FileHandle(forWritingTo: destination)
+        try output?.truncate(atOffset: 0)
+
+        let chunkSize: Int64 = 1024 * 1024
+        var remaining = Int64(end) - offset
+        while remaining > 0 {
+            guard sample() != .critical,
+                  availableForImportantUsage() >= remaining + headroom else {
+                throw StorageError.pressureRose
+            }
+
+            let chunk = try input.read(upToCount: Int(min(chunkSize, remaining))) ?? Data()
+            guard !chunk.isEmpty else { throw StorageError.exportFailed }
+            try output?.write(contentsOf: chunk)
+            remaining -= Int64(chunk.count)
+        }
+        completed = true
     }
 
     /// **Application Support, never `Caches` or `tmp`.**
@@ -113,4 +148,4 @@ public actor StorageGovernor {
 }
 
 public enum StoragePressure: Sendable { case ok, low, critical }
-public enum StorageError: Error { case pressureRose, exportFailed }
+public enum StorageError: Error { case pressureRose, exportFailed, invalidSourceRange }

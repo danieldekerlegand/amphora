@@ -1,24 +1,11 @@
-# Chief Progress — 50-conformance-vectors
-Started: Thu Aug 20 02:24:44 CDT 2026
+# Chief Progress — 60-ios-completes-remainder-and-photo-sources
+Started: Thu Aug 20 02:31:02 CDT 2026
 ---
 
-## US-1 — A shared, language-neutral vector set derived from the spec
-- Added `Tests/Conformance/vectors.json` as the shared corpus, with 40 unique vectors: all 27 §2 transition-table rows plus explicit §4 invariant, §5 recovery, and §6 orphan-cancel cases.
-- Every vector includes a `spec` citation; the format is plain JSON with neutral state/event/expect records suitable for Swift and Kotlin readers.
-- Verification observed: JSON validation green; Swift build green; Swift path tests green (2 passed); TypeScript typecheck green; Gradle skipped because no wrapper or system Gradle is installed.
-- Files changed: `Tests/Conformance/vectors.json`, runtime/tasklist PRD status.
+## US-1 — `writeRemainder` streams from the source and re-samples pressure
 
-### Learnings for future iterations
-- Keep the shared corpus at `Tests/Conformance/vectors.json`; both native ports already reference this path in their state-machine documentation comments.
-- The spec includes conceptual events (`Enqueue`, `AttemptsExhausted`) not represented as native event types; preserve those rows in the neutral corpus so coverage remains faithful to the normative table, and let the runner map them explicitly.
+Implemented chunked FileHandle range copying in `StorageGovernor`, with injected capacity sampling for deterministic tests. A pressure shortfall throws `StorageError.pressureRose` and removes the destination via cleanup defer. Added successful offset-copy and mid-write pressure-collapse tests in `UploadPathTests`.
 
-## US-2 — Both ports run the vectors, and a divergence fails the build
-- Added native Swift and Kotlin conformance runners that load the same JSON corpus, exercise every executable vector, and assert state, offsets, attempts, and required effects.
-- Added `AttemptsExhausted` to both event models/state machines so the conceptual row is executable rather than silently skipped.
-- CI now runs the Android vector suite after the library build; Swift already runs the executable test suite.
-- Verification observed: `.chief/verify.sh` green; Swift build and tests green with 40 vectors and 42 total path assertions; TypeScript typecheck green; Gradle unavailable locally and reported as skipped. A temporary Swift divergence (`AttemptsExhausted` returning no-op) failed the suite at `row-21-attempts-exhausted` with exit 133, then the implementation was restored and reverified green.
-- Files changed: `ios/Tests/AmphoraTests/ConformanceTests.swift`, `android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt`, both state-machine event models, Android Gradle config, CI workflow, and Swift model initializers.
+Files changed: `ios/Sources/Amphora/Governor/StorageGovernor.swift`, `ios/Tests/AmphoraTests/UploadPathTests.swift`, runtime and tracked PRDs.
 
-### Learnings for future iterations
-- Keep native conformance runners pointed at `Tests/Conformance/vectors.json`; use explicit adapters for spec-level events that are not transport callbacks.
-- Gradle is only available in CI for this checkout, so Android test compilation/execution must be validated by the CI job.
+Learnings for future iterations: `StorageGovernor` is an actor, so direct tests must be async and capacity behavior is best exercised through its `@Sendable` provider; run the Swift package checks from the repository root so conformance vectors resolve correctly.
