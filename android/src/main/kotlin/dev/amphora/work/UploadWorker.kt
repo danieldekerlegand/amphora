@@ -104,6 +104,17 @@ class UploadWorker(
                 tag(jobId), ExistingWorkPolicy.KEEP, request(jobId, policy, requiresCharging),
             )
         }
+
+        fun enqueueDelayed(context: Context, jobId: String, delayMillis: Long) {
+            val work = OneTimeWorkRequestBuilder<UploadWorker>()
+                .addTag(tag(jobId))
+                .setInputData(workDataOf(KEY_JOB_ID to jobId))
+                .setInitialDelay(delayMillis.coerceAtLeast(0L), java.util.concurrent.TimeUnit.MILLISECONDS)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                tag(jobId), ExistingWorkPolicy.REPLACE, work,
+            )
+        }
     }
 }
 

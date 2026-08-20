@@ -34,8 +34,8 @@
         "The notification builder returns a `ForegroundInfo` valid for a `dataSync` foreground service.",
         "No existing call site was edited to accommodate the new code."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added the graph, all five UploadJob enum converters, delayed unique-work scheduling, and a dataSync ForegroundInfo notification. git diff --check is green; gradle :android:assemble could not run because gradle is not installed in this environment. Existing call-site lines remain unchanged."
     },
     {
       "id": "US-3",
