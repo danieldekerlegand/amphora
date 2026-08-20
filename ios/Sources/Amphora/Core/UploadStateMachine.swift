@@ -37,7 +37,8 @@ public enum UploadStateMachine {
             j.state = .preparing
             j.updatedAt = now
             j.leaseExpiresAt = now.addingTimeInterval(leaseDuration)
-            return t(j, .acquireLease, .emit(jobId: job.id, state: .preparing))
+            return t(j, .acquireLease, .startTransfer(jobId: job.id),
+                     .emit(jobId: job.id, state: .preparing))
 
         case .preparing:
             switch event {

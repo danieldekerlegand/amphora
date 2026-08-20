@@ -11,10 +11,12 @@ public actor NetworkGovernor {
 
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "dev.amphora.network")
-    private var current: NetworkStatus = .unavailable
+    private var current: NetworkStatus
     private var observers: [@Sendable (NetworkStatus) -> Void] = []
 
-    public init() {}
+    public init(initialStatus: NetworkStatus = .unavailable) {
+        current = initialStatus
+    }
 
     public func start() {
         monitor.pathUpdateHandler = { [weak self] path in

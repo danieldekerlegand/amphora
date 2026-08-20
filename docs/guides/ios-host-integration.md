@@ -15,7 +15,11 @@ func application(
     // background-session events; if the session and delegate do not exist when those events are
     // replayed, they are lost and in-flight uploads stall with no error.
     Task {
-        await AmphoraUploader.shared.configure(store: SQLiteUploadStore.default)
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let store = try! SQLiteUploadStore(
+            url: appSupport.appendingPathComponent("amphora.sqlite")
+        )
+        await AmphoraUploader.shared.configure(store: store)
         let report = await AmphoraUploader.shared.ready()
         // report.adopted   — still transferring; re-attached without restarting
         // report.recovered — orphaned but resumed from the server's offset

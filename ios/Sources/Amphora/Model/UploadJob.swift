@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This struct is the only place `uploadUrl` is stored on the device. tusd has no enumeration
 /// endpoint, so losing it orphans the server-side resource permanently.
-public struct UploadJob: Equatable, Sendable {
+public struct UploadJob: Equatable, Codable, Sendable {
     public let id: String
     public var groupId: String?
 
