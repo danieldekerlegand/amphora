@@ -11,3 +11,13 @@ Started: Thu Aug 20 02:19:55 CDT 2026
 ### Learnings for future iterations
 - The iOS test target is an executable (`AmphoraPathTests`), so `swift test` reports no tests; invoke it with `swift run --package-path ios AmphoraPathTests`.
 - This repository has no Gradle wrapper or system Gradle on the authoring machine, so local verification must report Android as skipped while CI handles it.
+
+## US-2 — CI builds all three targets on a runner that has the toolchains
+- Expanded `.github/workflows/ci.yml` with separate iOS, Android, and React Native jobs.
+- iOS uses macOS 14 and `-warnings-as-errors`; Android provisions Temurin JDK 17, Android SDK platform 35/build tools, and runs the required `gradle :android:assemble` step; RN retains control-surface, typecheck, and build gates.
+- Verification observed: workflow YAML parsed PASS; local Swift build with warnings-as-errors and path tests PASS (2 passed); RN control-surface, typecheck, and build PASS. Android remains CI-only because Java and Gradle are unavailable locally.
+- Files changed: `.github/workflows/ci.yml`, runtime/tasklist PRD status, git-tracked tasklist status.
+
+### Learnings for future iterations
+- CI should keep Android as a standalone job with no `continue-on-error`; local verification cannot substitute for this target when the Android toolchain is absent.
+- The Swift package can enforce warning cleanliness portably with `swift build --package-path ios -Xswiftc -warnings-as-errors`.
