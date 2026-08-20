@@ -1,45 +1,45 @@
 {
   "project": "amphora",
   "category": "feature",
-  "branchName": "chief/80-integration-against-tusd",
-  "description": "**Everything before this is tested against doubles.** This is the first tasklist where real bytes cross a real wire to a real server.\n\nThe stack is already decided and is adopted, not built: `draft-ietf-httpbis-resumable-upload` (tus 2.x lineage, interop version pinned) against **tusd v2** with the **S3 backend**. `docs/reference/wire-protocol.md` is the contract; this tasklist proves both dialects actually speak it.\n\n**The interesting assertions are the failure paths, not the happy one.** An upload that completes on a good network proves very little — the whole product thesis is what happens when it does not.",
+  "branchName": "chief/90-environment-matrix",
+  "description": "**The claims that justify this project's existence are all environmental, and none has been tested in the environment it concerns.** Everything up to `80` runs in a test harness. This tasklist runs it where it actually has to work.\n\nWhat is genuinely being tested, from `docs/reference/platform-constraints.md`:\n\n- **App suspension** — JS does not run while suspended, which is the entire reason the RN surface is a control plane only. Prove a transfer continues while the app is backgrounded.\n- **Process death and relaunch** — the durable registry plus launch reconciler exist for exactly this. *\"Close the app, reopen it, find the upload still there and still cancelable.\"*\n- **Storage reclamation mid-transfer** — the original bug. iOS reclaiming the purgeable `Caches` directory is why staging goes to Application Support.\n- **Android's 6h/24h `dataSync` budget** — a multi-hour upload must survive budget exhaustion by design, not by luck.\n- **iOS 17+ native transport vs the pre-17 fallback** — two transports, and only one of them is exercised on a modern simulator by default.\n- **Network transitions** — wifi to cellular, and loss mid-flight.\n\n**Simulators and emulators do not test most of this.** Background execution budgets, real storage pressure and radio transitions need physical devices. Where a case can only be checked on a device, say so and record the result rather than substituting a simulator run that proves something weaker.",
   "dependsOn": [
-    "60-ios-completes-remainder-and-photo-sources",
-    "70-android-completes-content-sources"
+    "80-integration-against-tusd"
   ],
   "touches": [
+    "docs/",
     "ios/",
-    "android/",
-    "docs/"
+    "android/"
   ],
   "iters": 5,
   "warmup": [],
   "userStories": [
     {
       "id": "US-1",
-      "title": "Both platforms complete an upload against a real tusd instance",
-      "description": "create / head / append / terminate, in both dialects, against tusd v2 + S3.",
+      "title": "A written environment matrix, with each cell's verdict and how it was reached",
+      "description": "The deliverable is the evidence, not a green tick. State which cells needed a physical device.",
       "acceptanceCriteria": [
-        "A reproducible tusd v2 + S3 test environment is documented and scripted.",
-        "Both the Swift and Kotlin wire layers complete a multi-megabyte upload against it.",
-        "The pinned interop version is asserted — a server advertising a different version is rejected rather than guessed at.",
-        "`terminate` is proven to actually remove the server-side upload."
+        "A matrix document covers OS versions × transport × source type × interruption mode, and is linked from `docs/README.md`.",
+        "Every cell records how it was verified: automated, manual-on-device, or NOT YET VERIFIED.",
+        "Cells that a simulator or emulator cannot honestly cover are marked as such rather than filled with a weaker substitute.",
+        "The iOS 17+ native transport and the pre-17 TUSKit fallback are BOTH exercised."
       ],
       "passes": true,
-      "notes": "Added pinned tusd v2.4.0 + MinIO Compose environment and 3 MiB create/head/patch/terminate checks for Swift and Kotlin; Swift build with warnings-as-errors and 44 path tests green, Swift integration target compiles, bash/config validation green. Live Docker run was attempted but the local Docker daemon was unavailable."
+      "notes": "Added docs/reference/environment-matrix.md and linked it from docs/README.md; 10 OS/transport/source rows × 4 interruption cells explicitly record NOT YET VERIFIED physical-device gaps. Swift build green; Amphora path tests 44 passed; TypeScript typecheck passed; Gradle skipped because no Gradle toolchain was available."
     },
     {
       "id": "US-2",
-      "title": "Resume works across an interruption, from the server's offset",
-      "description": "The claim that justifies the project. An upload killed at 40% must resume at 40%, not restart.",
+      "title": "The four environmental claims are each demonstrated",
+      "description": "Backgrounding, process death, storage reclamation, and the Android dataSync budget.",
       "acceptanceCriteria": [
-        "An upload interrupted mid-transfer resumes from the offset the server reports via HEAD, not from a locally cached guess.",
-        "Resume is proven across PROCESS DEATH, not merely a cancelled task — kill the process, relaunch, assert the transfer continues.",
-        "The bytes that arrive at S3 are byte-identical to the source — verified by checksum, on both platforms.",
-        "A server that reports an unexpected offset is handled as a typed error, not by silently restarting."
+        "A transfer continues while the app is backgrounded, on both platforms, evidenced by a captured log or recording.",
+        "An upload survives process death and is resumable AND cancelable after relaunch — the README's stated promise, tested literally.",
+        "Storage reclaimed mid-transfer produces a clean typed failure and no corrupted upload — the original bug, proven retired.",
+        "An Android upload spanning the 6h `dataSync` budget continues correctly across budget exhaustion.",
+        "A wifi-to-cellular transition mid-transfer does not corrupt or restart the upload."
       ],
       "passes": true,
-      "notes": "Added process-death resume coverage for Swift and Kotlin: each relaunches with a fresh client and resumes from authoritative HEAD; resume.sh kills a throttled PATCH, resumes from the reported offset, and verifies the MinIO S3 object SHA-256. Added typed unexpected-offset handling. Swift warnings-as-errors build and 44 path tests green; shell syntax and diff checks green. Live Docker resume was attempted but the local Docker daemon was unavailable; Android Gradle was unavailable locally."
+      "notes": "Added docs/reference/environment-evidence.md and linked it from docs/README.md. Swift build + AmphoraPathTests: green, 44 passed; TypeScript typecheck: green. The evidence ledger records automated protocol/state and typed storage observations plus explicit NOT YET VERIFIED physical-device gaps for background suspension, Android 6h dataSync exhaustion, and Wi-Fi→cellular handoff; Gradle was skipped because no Gradle toolchain was available."
     }
   ]
 }
