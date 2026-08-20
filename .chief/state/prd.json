@@ -2,7 +2,7 @@
   "project": "amphora",
   "category": "fix",
   "branchName": "chief/30-ios-runtime-is-constructible",
-  "description": "\ud83d\udfe1 **iOS compiles but cannot be constructed, let alone run.** The 2026-08-20 pass got `swift build` to zero errors and zero warnings \u2014 which proved the code is well-formed, and nothing more.\n\nThree things stand between compiling and running:\n\n- **`UploadStore` is a protocol with no conforming type.** `Store/UploadStore.swift` declares 14 methods \u2014 get, leases, resume data, pruning \u2014 and no SQLite implementation exists anywhere in the tree. The doc comment already argues *why* SQLite over Core Data; that reasoning is the spec.\n- **`AmphoraUploader.swift:27` is a TODO where the graph should be** \u2014 *\"build the graph \u2014 session manager, governors, transport, engine, reconciler.\"* Nothing wires the parts together.\n- **Two `fatalError(\"unimplemented\")` landmines** in `StorageGovernor` \u2014 `writeRemainder` (line 62) and the PHAsset export (line 91). `writeRemainder` is on a path `TUSKitTransport:73` already calls, so a resumed upload crashes rather than fails.\n\n**Scope: the simple path only.** Offset-zero, plain-file sources \u2014 which is the common case for a first attempt and, deliberately, the path that touches neither `fatalError`. Filling those two is `60`. What this tasklist buys is an uploader you can actually instantiate and send bytes with.",
+  "description": "🟡 **iOS compiles but cannot be constructed, let alone run.** The 2026-08-20 pass got `swift build` to zero errors and zero warnings — which proved the code is well-formed, and nothing more.\n\nThree things stand between compiling and running:\n\n- **`UploadStore` is a protocol with no conforming type.** `Store/UploadStore.swift` declares 14 methods — get, leases, resume data, pruning — and no SQLite implementation exists anywhere in the tree. The doc comment already argues *why* SQLite over Core Data; that reasoning is the spec.\n- **`AmphoraUploader.swift:27` is a TODO where the graph should be** — *\"build the graph — session manager, governors, transport, engine, reconciler.\"* Nothing wires the parts together.\n- **Two `fatalError(\"unimplemented\")` landmines** in `StorageGovernor` — `writeRemainder` (line 62) and the PHAsset export (line 91). `writeRemainder` is on a path `TUSKitTransport:73` already calls, so a resumed upload crashes rather than fails.\n\n**Scope: the simple path only.** Offset-zero, plain-file sources — which is the common case for a first attempt and, deliberately, the path that touches neither `fatalError`. Filling those two is `60`. What this tasklist buys is an uploader you can actually instantiate and send bytes with.",
   "dependsOn": [],
   "touches": [
     "ios/"
@@ -13,11 +13,11 @@
     {
       "id": "US-1",
       "title": "A concrete SQLite-backed UploadStore",
-      "description": "Implement the protocol as written. The lease methods are not optional extras \u2014 they are how two processes are prevented from driving one job.",
+      "description": "Implement the protocol as written. The lease methods are not optional extras — they are how two processes are prevented from driving one job.",
       "acceptanceCriteria": [
         "A concrete type conforms to `UploadStore` with every one of its 14 methods implemented.",
         "Backed by SQLite, per the reasoning already recorded in the file's doc comment.",
-        "Lease acquire/release/renew/break behave correctly under a concurrent-acquisition test \u2014 two acquirers, one winner.",
+        "Lease acquire/release/renew/break behave correctly under a concurrent-acquisition test — two acquirers, one winner.",
         "Durability is proven: a store written, released, and re-opened returns the same jobs.",
         "`swift build` stays at zero errors and zero warnings."
       ],
@@ -39,10 +39,10 @@
     {
       "id": "US-3",
       "title": "The offset-zero path moves bytes end to end",
-      "description": "Against a local test double, not a live server \u2014 `80` does the real thing.",
+      "description": "Against a local test double, not a live server — `80` does the real thing.",
       "acceptanceCriteria": [
-        "A test drives create \u2192 append \u2192 complete for a plain-file source at offset zero, asserting the wire calls in order.",
-        "Neither `fatalError` is reachable on this path \u2014 proven by a test that would trap if it were.",
+        "A test drives create → append → complete for a plain-file source at offset zero, asserting the wire calls in order.",
+        "Neither `fatalError` is reachable on this path — proven by a test that would trap if it were.",
         "A cancel mid-transfer leaves no orphaned staged file."
       ],
       "passes": true,

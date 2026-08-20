@@ -1,0 +1,18 @@
+# Chief Progress — 30-ios-runtime-is-constructible
+Started: Thu Aug 20 02:10:43 CDT 2026
+---
+
+## US-1 — A concrete SQLite-backed UploadStore
+Implemented `SQLiteUploadStore` in `ios/Sources/Amphora/Store/SQLiteUploadStore.swift`, added SQLite linking, and made `UploadJob` codable for durable payloads. The store supports all protocol methods, SQL compare-and-set leases, resume blobs, query filters, and completed-row pruning. `swift build` completed green with zero errors and zero warnings.
+
+Learnings for future iterations: SwiftPM needs an explicit sqlite3 linker setting on Apple platforms; actor isolation serializes calls per store, while SQLite transactions/conditional UPDATEs protect concurrent stores.
+
+## US-2 — The graph is built and an uploader can be instantiated
+Implemented the public uploader graph in `ios/Sources/Amphora/AmphoraUploader.swift`: configuration now creates storage/network/source governors, eagerly creates the background session, selects the iOS 17+ or pre-17 transport, constructs the engine and reconciler, and completes readiness after reconciliation. Added a thread-safe event-sink proxy to break the session/engine initialization cycle, a no-op emitter default, and a public initializer. Updated `docs/guides/ios-host-integration.md` to show the required SQLite database URL in Application Support. `swift build` and `git diff --check` are green.
+
+Learnings for future iterations: the background session must be instantiated before reconciliation and before launch events can arrive; a small synchronous proxy is needed because the session delegate and engine otherwise depend on each other during graph construction.
+
+## US-3 — The offset-zero path moves bytes end to end
+Changed the pending → preparing transition to start the transfer effect, so enqueue now resolves the plain-file source, creates the remote resource, HEADs offset zero, and schedules the append rather than stopping before any network work. Added `AmphoraPathTests`, a local transport-double executable that verifies create → head → append → complete ordering and staged-file deletion on cancellation. Made transport result initializers public and allowed deterministic network status injection for the local test. `swift build -Xswiftc -warnings-as-errors`, `swift run AmphoraPathTests`, and `git diff --check` are green; the path test reports 2 passed.
+
+Learnings for future iterations: first-attempt work must be represented by a `startTransfer` effect on the pending schedule transition; otherwise the engine persists `.preparing` and never reaches source resolution. The command-line-tools Swift installation has no XCTest module, so the repository uses a small executable path-test target for this iteration.

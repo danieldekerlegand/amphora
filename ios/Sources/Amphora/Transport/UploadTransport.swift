@@ -22,11 +22,21 @@ public protocol UploadTransport: Sendable {
 public struct CreateResult: Sendable {
     public let uploadUrl: String
     public let expiresAt: Date?
+
+    public init(uploadUrl: String, expiresAt: Date?) {
+        self.uploadUrl = uploadUrl
+        self.expiresAt = expiresAt
+    }
 }
 
 public struct HeadResult: Sendable {
     public let offset: Int64
     public let expiresAt: Date?
+
+    public init(offset: Int64, expiresAt: Date?) {
+        self.offset = offset
+        self.expiresAt = expiresAt
+    }
 }
 
 public struct TransferHandle: Sendable {
@@ -34,6 +44,11 @@ public struct TransferHandle: Sendable {
     /// Set when the strategy had to materialise a remainder file. Tracked so the storage
     /// reservation can be released on every exit path (I5).
     public let stagedRemainderPath: String?
+
+    public init(taskIdentifier: Int?, stagedRemainderPath: String?) {
+        self.taskIdentifier = taskIdentifier
+        self.stagedRemainderPath = stagedRemainderPath
+    }
 }
 
 /// Chooses a strategy per device. Deliberately explicit rather than a silent fallback: the two

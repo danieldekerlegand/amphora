@@ -27,5 +27,10 @@ let package = Package(
             path: "Sources/Amphora",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
+        .executableTarget(
+            name: "AmphoraPathTests",
+            dependencies: ["Amphora"],
+            path: "Tests/AmphoraTests"
+        ),
     ]
 )
