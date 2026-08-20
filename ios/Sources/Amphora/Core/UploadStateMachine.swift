@@ -141,6 +141,7 @@ public enum UploadStateMachine {
 
         case .retryWait:
             switch event {
+            case .attemptsExhausted: return fail(job, .transient, nil, now)
             case .deadlineReached: return resume(job, now)
             case .pause: return pause(job, now)
             case let .blocked(reason): return block(job, reason, now)

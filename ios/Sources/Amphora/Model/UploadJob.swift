@@ -63,6 +63,24 @@ public struct UploadJob: Equatable, Codable, Sendable {
     public var completedAt: Date?
     public var schemaVersion: Int
 
+    public init(id: String, groupId: String?, sourceKind: SourceKind, sourceUri: String, stagedPath: String?, sizeBytes: Int64,
+                contentType: String, fingerprint: String, endpoint: String, uploadUrl: String?, uploadExpiresAt: Date?,
+                metadata: [String: String], state: UploadState, pauseReason: PauseReason?, blockReason: BlockReason?,
+                errorClass: ErrorClass?, errorDetail: String?, bytesTransferred: Int64, serverOffset: Int64,
+                serverOffsetAt: Date?, attemptCount: Int, nextAttemptAt: Date?, reservedBytes: Int64, ownerToken: String?,
+                leaseExpiresAt: Date?, taskIdentifier: Int?, sessionIdentifier: String?, policy: UploadPolicy,
+                remoteTerminated: Bool, createdAt: Date, updatedAt: Date, completedAt: Date?, schemaVersion: Int) {
+        self.id = id; self.groupId = groupId; self.sourceKind = sourceKind; self.sourceUri = sourceUri; self.stagedPath = stagedPath
+        self.sizeBytes = sizeBytes; self.contentType = contentType; self.fingerprint = fingerprint; self.endpoint = endpoint
+        self.uploadUrl = uploadUrl; self.uploadExpiresAt = uploadExpiresAt; self.metadata = metadata; self.state = state
+        self.pauseReason = pauseReason; self.blockReason = blockReason; self.errorClass = errorClass; self.errorDetail = errorDetail
+        self.bytesTransferred = bytesTransferred; self.serverOffset = serverOffset; self.serverOffsetAt = serverOffsetAt
+        self.attemptCount = attemptCount; self.nextAttemptAt = nextAttemptAt; self.reservedBytes = reservedBytes
+        self.ownerToken = ownerToken; self.leaseExpiresAt = leaseExpiresAt; self.taskIdentifier = taskIdentifier
+        self.sessionIdentifier = sessionIdentifier; self.policy = policy; self.remoteTerminated = remoteTerminated
+        self.createdAt = createdAt; self.updatedAt = updatedAt; self.completedAt = completedAt; self.schemaVersion = schemaVersion
+    }
+
     public var isTerminal: Bool { state.isTerminal }
     public var remaining: Int64 { max(0, sizeBytes - serverOffset) }
 
@@ -112,6 +130,12 @@ public enum ErrorClass: String, Codable, Sendable {
 }
 
 public struct UploadPolicy: Equatable, Codable, Sendable {
+    public init(allowsExpensiveNetwork: Bool = true, allowsConstrainedNetwork: Bool = false, requiresCharging: Bool = false,
+                maxAttempts: Int = 12, priority: Int = 0, isDiscretionary: Bool = true) {
+        self.allowsExpensiveNetwork = allowsExpensiveNetwork; self.allowsConstrainedNetwork = allowsConstrainedNetwork
+        self.requiresCharging = requiresCharging; self.maxAttempts = maxAttempts; self.priority = priority; self.isDiscretionary = isDiscretionary
+    }
+
     public var allowsExpensiveNetwork: Bool = true
     public var allowsConstrainedNetwork: Bool = false   // respect Low Data Mode by default
     public var requiresCharging: Bool = false

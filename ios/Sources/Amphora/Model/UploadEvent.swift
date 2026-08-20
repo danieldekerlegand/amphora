@@ -21,6 +21,7 @@ public enum UploadEvent: Equatable, Sendable {
     case blocked(BlockReason)
     case gateCleared
     case deadlineReached
+    case attemptsExhausted
     case spaceDenied(needed: Int64)
     case processStart
 }

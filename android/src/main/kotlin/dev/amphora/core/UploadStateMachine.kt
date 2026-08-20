@@ -129,6 +129,7 @@ object UploadStateMachine {
                 else -> noop(job)
             }
             UploadState.RETRY_WAIT -> when (event) {
+                is UploadEvent.AttemptsExhausted -> fail(job, ErrorClass.TRANSIENT, null, now)
                 is UploadEvent.DeadlineReached -> resume(job, now)
                 is UploadEvent.Pause -> pause(job, now)
                 is UploadEvent.Blocked -> block(job, event.reason, now)

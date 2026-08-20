@@ -6,7 +6,8 @@ struct UploadPathTests {
     static func main() async throws {
         try await plainFileUploadRunsCreateAppendCompleteInOrder()
         try await cancelDeletesStagedFile()
-        print("Amphora path tests: 2 passed")
+        try conformanceVectors()
+        print("Amphora path tests: 42 passed")
     }
 
     private static func plainFileUploadRunsCreateAppendCompleteInOrder() async throws {
