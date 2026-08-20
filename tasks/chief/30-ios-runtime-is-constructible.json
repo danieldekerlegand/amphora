@@ -33,8 +33,8 @@
         "A test instantiates the uploader and enqueues a job without touching the network.",
         "`docs/guides/ios-host-integration.md` matches what the code now actually requires of a host app."
       ],
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "swift build: green, 0 errors and 0 warnings. AmphoraUploader now publicly constructs and configure wires storage, network/source governors, background session, OS-version-selected transport, engine, and reconciler; the session delegate uses an installed event-sink proxy. Host integration now opens SQLiteUploadStore at an Application Support path, and enqueue persists before scheduling without a network call."
     },
     {
       "id": "US-3",
