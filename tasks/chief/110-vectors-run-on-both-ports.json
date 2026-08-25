@@ -1,0 +1,56 @@
+{
+  "project": "amphora",
+  "category": "unblock",
+  "branchName": "chief/110-vectors-run-on-both-ports",
+  "description": "**Forty conformance vectors exist and execute on one platform, which defeats the only purpose they have.** `Tests/Conformance/vectors.json` (40 vectors, schemaVersion 1) is read by both ports — `ConformanceTests.swift:6` and `ConformanceVectorsTest.kt:15` — and the whole reason it exists is to stop the Swift and Kotlin state machines drifting apart. A vector suite that runs on Swift only cannot detect Kotlin drift; it provides assurance without providing verification, which is worse than an acknowledged gap.\n\nTwo defects, both verified 2026-08-25:\n\n**The Kotlin side has never been compiled at all** — no JDK, no gradle, no wrapper, and no git remote, so CI never ran it either. `100` fixes that precondition and this tasklist depends on it.\n\n**Both sides load the vectors by a repo-root-relative path**, so running `swift run AmphoraPathTests` from `ios/` crashes with `NSCocoaErrorDomain 260` rather than failing a test. A fixture the runner cannot find is not a red test; it is a crash that reads as an environment problem, and it makes the suite's own working directory a hidden precondition.\n\n**Do not weaken the vectors to make them pass.** The design commitment they protect is real and specific: byte ranges stream from the source file with **no chunk temp files**, taking peak extra storage from roughly 2x the file size to about zero. `NativeResumableTransport.startTransfer` hands `URLSession` the original file with no slicing, and Kotlin must be shown to agree.",
+  "dependsOn": [
+    "100-android-into-ci"
+  ],
+  "touches": [
+    "Tests",
+    "ios",
+    "android",
+    ".github"
+  ],
+  "iters": 6,
+  "warmup": [
+    "python3 -c \"import json;d=json.load(open('Tests/Conformance/vectors.json'));print(type(d), len(d if isinstance(d,list) else d.get('vectors',[])))\"",
+    "grep -n 'vectors.json' -r ios android Tests 2>/dev/null | head",
+    "sed -n '1,25p' ios/Tests/*/ConformanceTests.swift 2>/dev/null || find . -name ConformanceTests.swift",
+    "find . -name ConformanceVectorsTest.kt | head -1 | xargs sed -n '1,25p'",
+    "cd ios && swift run AmphoraPathTests 2>&1 | tail -5"
+  ],
+  "userStories": [
+    {
+      "id": "US-1",
+      "title": "The vectors load from anywhere, on both ports",
+      "acceptanceCriteria": [
+        "Vector loading is anchored to the repository root by a means that does not depend on the caller's working directory, on both the Swift and Kotlin sides.",
+        "A missing or unreadable vector file FAILS a test with a legible message. It must not crash, and it must not silently pass — an absent fixture reporting green is the failure mode this whole batch is about.",
+        "`swift run AmphoraPathTests` succeeds from the repository root AND from `ios/`. Both are recorded in the notes."
+      ],
+      "notes": null
+    },
+    {
+      "id": "US-2",
+      "title": "Kotlin executes the same 40 vectors, in CI",
+      "acceptanceCriteria": [
+        "The Kotlin vector test runs in the android CI job and its result is reported. This is the first execution of that test by anything, so report what it actually says rather than what it was expected to say.",
+        "Both ports run the SAME file — one `vectors.json`, no per-platform copy. A second copy would reintroduce exactly the drift the vectors exist to catch.",
+        "Vector count and schemaVersion are asserted, so a truncated or half-written fixture cannot pass as a full run. 'Ran 0 vectors' must be a failure, on the same principle that a test runner discovering zero tests is a failure and not a pass."
+      ],
+      "notes": null
+    },
+    {
+      "id": "US-3",
+      "title": "Drift is proven to be caught",
+      "acceptanceCriteria": [
+        "A deliberate divergence is introduced into ONE port and both suites are run: the vectors must go red. A drift detector nobody has watched detect drift is indistinguishable from one that cannot.",
+        "The negative control is committed as a test or a documented procedure, not performed once and described in prose.",
+        "The 'no chunk temp files' commitment is among the behaviours covered, since it is the design claim most likely to be quietly violated by a well-meaning port and the one with the largest consequence for the storage governor.",
+        "Note in the docs which conformance properties the vectors do NOT cover, so their scope is legible rather than assumed total."
+      ],
+      "notes": null
+    }
+  ]
+}
