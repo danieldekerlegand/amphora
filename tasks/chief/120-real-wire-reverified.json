@@ -28,6 +28,7 @@
         "Replacement pins are chosen so this failure is less likely to recur — a digest rather than a mutable tag where the registry supports it — and the reasoning is recorded beside the pin.",
         "The harness distinguishes 'Docker unavailable on this machine' from 'the run failed'. The first is an honest skip, the second is red, and conflating them is what produced `80`'s false record."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -38,6 +39,7 @@
         "The same from the Kotlin port. This depends on `100`; if the Android toolchain still cannot run it, this criterion is reported UNVERIFIABLE HERE and is NOT marked passing.",
         "The storage claim is observed rather than asserted: peak extra disk during a transfer stays near zero, consistent with 'no chunk temp files'. A measurement, not a code reading."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -49,6 +51,7 @@
         "README.md is brought in line. It currently still says 'Nothing moves bytes yet' and 'No conformance vectors yet' — the second is already false, and the first should become false through this tasklist rather than through an edit.",
         "State the general rule in `docs/` so it outlives this fix: a story may not be marked passing on the strength of work that its own notes record as not having run."
       ],
+      "passes": false,
       "notes": null
     }
   ]

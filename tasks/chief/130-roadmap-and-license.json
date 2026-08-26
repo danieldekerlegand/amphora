@@ -29,6 +29,7 @@
         "The choice accounts for what the repo depends on and what it deliberately does not vendor — the wire protocol is `draft-ietf-httpbis-resumable-upload` against tusd, and the web path uses `tus-js-client` unmodified, so nothing here re-specifies a protocol or carries a copyleft obligation inward. Verify that rather than assuming it.",
         "SPDX headers or a stated file-level convention, consistent with how sibling repos in this portfolio express licence posture."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -41,6 +42,7 @@
         "Open decisions are listed, including the placeholder name and whether device evidence can ever be automated.",
         "The roadmap reflects what `100`–`120` MEASURED. If any of those reported UNVERIFIABLE HERE, the roadmap says so rather than rounding it up."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -52,6 +54,7 @@
         "A `CLAUDE.md` is added covering what a session working here needs: the no-chunk-temp-files commitment, the local-skip vs CI-fail gate distinction, that `ios/Package.swift` declares tests as an `.executableTarget` so `swift test` reports 'no tests found' while `swift run AmphoraPathTests` passes, and the adopt-the-protocol/build-the-clients boundary.",
         "A `CHANGELOG.md` is started. It is missing in every repo audited, so this is the portfolio's most-ignored standard and there is no point pretending otherwise — start it here because this repo is about to publish."
       ],
+      "passes": false,
       "notes": null
     }
   ]

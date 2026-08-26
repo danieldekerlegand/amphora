@@ -29,6 +29,7 @@
         "A missing or unreadable vector file FAILS a test with a legible message. It must not crash, and it must not silently pass — an absent fixture reporting green is the failure mode this whole batch is about.",
         "`swift run AmphoraPathTests` succeeds from the repository root AND from `ios/`. Both are recorded in the notes."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -39,6 +40,7 @@
         "Both ports run the SAME file — one `vectors.json`, no per-platform copy. A second copy would reintroduce exactly the drift the vectors exist to catch.",
         "Vector count and schemaVersion are asserted, so a truncated or half-written fixture cannot pass as a full run. 'Ran 0 vectors' must be a failure, on the same principle that a test runner discovering zero tests is a failure and not a pass."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -50,6 +52,7 @@
         "The 'no chunk temp files' commitment is among the behaviours covered, since it is the design claim most likely to be quietly violated by a well-meaning port and the one with the largest consequence for the storage governor.",
         "Note in the docs which conformance properties the vectors do NOT cover, so their scope is legible rather than assumed total."
       ],
+      "passes": false,
       "notes": null
     }
   ]

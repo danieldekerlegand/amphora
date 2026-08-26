@@ -26,6 +26,7 @@
         "The visibility choice is made deliberately and recorded: private Actions are billed and the account's private-repo runs are currently blocked, so a private repo here yields a workflow that cannot start. If private is chosen anyway, the workflow must not be treated as a gate until billing is confirmed working.",
         "Evidence: a run id and its conclusion, quoted in the story notes. 'CI is wired' is not a claim this batch accepts without a run behind it."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -37,6 +38,7 @@
         "A `gradlew` wrapper is committed so the build is reproducible and pinned, rather than depending on whatever gradle a runner happens to have.",
         "The story notes report what ran and what it said. 'Could not run' and 'ran and passed' are different claims and must not be conflated — that conflation is what produced this repo's three auto-verified merges."
       ],
+      "passes": false,
       "notes": null
     },
     {
@@ -48,6 +50,7 @@
         "Counterfactual test: with the Android toolchain removed, the local gate reports SKIPPED (not passed) and the CI gate goes red.",
         "Document the local-vs-CI distinction where a reader will meet it, so the next person does not re-flatten the two."
       ],
+      "passes": false,
       "notes": null
     }
   ]
