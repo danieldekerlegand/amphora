@@ -173,3 +173,86 @@ unverified.
   (README + ROADMAP §3), local-SKIP vs CI-FAIL (`continuous-integration.md`), the
   `.executableTarget`/`swift run AmphoraPathTests` gotcha (Codebase Patterns above), and
   adopt-the-protocol/build-the-clients (README).
+
+---
+
+## US-3 — README stops contradicting the tree (done)
+
+**What I did.** Corrected the one live contradiction left in `README.md`, added `CLAUDE.md` and
+`CHANGELOG.md`, and indexed both.
+
+**The `Stubbed:` line was the contradiction, and it was checked against the tree before being
+rewritten** rather than deleted on the strength of the PRD's word:
+
+- `ios/Sources/Amphora/Store/SQLiteUploadStore.swift` is a real SQLite actor — `CREATE TABLE
+  upload_jobs` / `resume_data`, prepared statements, `sqlite3_busy_timeout`.
+- `Governor/StorageGovernor.swift:64` `writeRemainder`, `:122` `exportPhotosAsset`;
+  `Core/SourceResolver.swift` resolves `ph://` through `PHAsset.fetchAssets`.
+- `android/…/core/SourceResolver.kt:66` `openFileDescriptor` + `Os.lseek` streams a seekable
+  `content://`; `stageIfRequired:84` stages only when it cannot, under the reservation.
+
+So the line was replaced with **what is actually missing** — the RN spec `AmphoraSpec` with no native
+implementation — instead of just removing it. A README that says nothing about the gap is only
+marginally better than one that names the wrong gap.
+
+**"Nothing moves bytes yet" needed no change in either direction.** `120` already rewrote the Status
+section; `grep` across every `*.md` for `Nothing moves` / `nothing has moved` / `No conformance
+vectors yet` returns **0 hits**. Criterion 2 is satisfied by what is already there, and the section
+carries the offsets (Swift `5505024`, Kotlin `6553600`) rather than the claim alone.
+
+**`CLAUDE.md`** (181 lines) covers the four points its criterion names, plus one it does not:
+
+1. no-chunk-temp-files, written as a commitment with the I6 enforcement attached (3 transport
+   vectors + `drift-control.sh` naming `i6-01-fresh-transfer`), so the reader meets the enforcement
+   in the same breath as the temptation;
+2. local-`SKIPPED` vs CI-`FAIL`, including the concrete consequence — Gradle always SKIPs here, so
+   `3 passed, 1 skipped` is **not** green and must not be written up as such;
+3. the `.executableTarget` gotcha, **observed rather than quoted**: `swift test --package-path ios`
+   prints `error: no tests found; create a target in the 'Tests' directory` and **exits 1** (the
+   exit code needed `PIPESTATUS`/a redirect to read — piping to `tail` reports `tail`'s 0);
+4. adopt-the-protocol / build-the-clients, with the three changes that fall on the wrong side of it;
+5. **added, not asked for:** CI's Swift builds `-Xswiftc -warnings-as-errors` and diagnoses
+   concurrency the local toolchain does not, so `verify.sh` can be green while the `ios` job is red
+   on the same commit. That is a live condition today and it is the single most likely way a future
+   session mistakes a local pass for the gate.
+
+**`CHANGELOG.md`** (171 lines), Keep a Changelog 1.1.0 + SemVer. `git tag` is empty and nothing is
+published, so **everything sits under `[Unreleased]`**, subdivided by the date it landed on `main`
+(`2026-08-27` / `08-26` / `08-20`, taken from the merge commits). Two honesty conventions are stated
+in the preamble and then honoured: pre-`08-27` entries are marked **reconstructed** from git history
+and `tasks/chief/completed/`, and tasklist `80` gets a **`Corrected`** subsection recording the false
+record rather than the claim it originally made. It closes with a **Known-red at the time of
+writing** section, so run `33044503283`'s `ios`+`android` FAILURE is something a reader *meets*
+rather than discovers.
+
+**Files changed.** `CLAUDE.md` (new), `CHANGELOG.md` (new), `README.md` (Stubbed→absence, Status
+opener, Layout gained `Tests/Conformance/` + `integration/tusd/`, pointer paragraph), `docs/README.md`
+(indexed both), `ROADMAP.md` (phase 7's "a `CHANGELOG.md` with a real first entry" precondition
+updated now that the file exists; Related gained both links).
+
+**Verification.** `.chief/verify.sh`: **3 passed, 1 skipped, 0 failed** — PASS Swift build, PASS
+Swift tests (46 passed), PASS TypeScript typecheck, SKIPPED Gradle (no JDK on `PATH`). The three
+cheap CI gates were also run directly: `check-single-fixture.sh` PASS, `verify-skip-policy.sh`
+"all assertions passed", `check:control-surface` "spec remains control-surface only". Link check
+across `README` / `CLAUDE` / `CHANGELOG` / `ROADMAP` / `docs/README` / `licensing`: **64 links and
+anchors checked, 0 broken**. Docs-only change touching nothing Android-shaped, so the Gradle skip
+leaves nothing in this story unverified.
+
+### Learnings for future iterations
+
+- **Verify a PRD's quotes against the tree before acting on them.** This tasklist's description was
+  stale in four separate places across the three stories (no-vectors, nothing-moved-a-byte, the line
+  count, and the README quote). Every one was caught by reading the file. The `Stubbed:` claim was
+  the only one that turned out to be true.
+- **`swift test`'s exit code is 1, not 0** — but `swift test … | tail` reports `tail`'s status. If
+  you are recording an exit code as evidence, redirect to a file and read `$?` directly.
+- **`zsh` here has no `timeout(1)`**, and unquoted `--include=*.swift` fails glob expansion before
+  `grep` ever sees it. Quote the pattern.
+- **Anchor links in this repo's docs are checked by nothing.** The 64-link check used for this story
+  was written inline; if anchors keep being added, that check belongs in CI next to
+  `check-single-fixture.sh`.
+- **The tasklist is now complete.** All three stories pass and no `⚠️ PRIOR VERIFICATION FAILED`
+  block exists in this file. The branch's own gate is green locally; the *repository's* CI gate is
+  red for reasons that predate this branch (two Swift concurrency errors and a nondeterministic
+  kapt failure), and that is recorded in `ROADMAP.md` phase 1 and in `CHANGELOG.md` rather than
+  being absorbed into a story note.
