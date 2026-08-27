@@ -119,3 +119,90 @@ OBSERVED (CI run 33040844045, branch chief/110-vectors-run-on-both-ports)
 - STILL OUTSTANDING FOR US-3: the Kotlin assertions added here have never been driven RED. Their
   Swift twins have (both controls above). US-3's negative control must exercise the Kotlin side
   specifically, in CI, since no JDK exists on this machine.
+
+## US-3 — Drift is proven to be caught (2026-08-27)
+
+WHAT: The vectors being green proved the two ports AGREE. Nothing proved the suite would NOTICE if
+they stopped — and this repo had already shipped exactly that failure (forty vectors, one platform).
+So: a committed negative control that drives both suites red on purpose, plus vectors for the one
+design commitment that had four prose statements and zero checks.
+
+FILES CHANGED
+- Tests/Conformance/drift-control.sh — NEW. Four controls, two per port: a state-machine drift
+  (SourceMissing reduces to BLOCKED instead of FAILED) that row-04-source-missing must catch, and an
+  I6 drift (the transport writes a chunk temp file) that the new I6 rows must catch. Each mutation
+  is applied to the working tree, run, and restored from a byte-for-byte backup on every exit path
+  including interrupt; the script's last act proves all four target files match the copies it took
+  at startup. It never stashes and never commits. A control is only accepted when the suite exits
+  NON-ZERO **and** prints the expected vector id — a file that no longer compiles also exits
+  non-zero. Missing anchor text is fatal, not a warning.
+- Tests/Conformance/apply-mutation.py — NEW. The exact-text replacement drift-control.sh uses.
+  Separate file because a python heredoc nested inside a shell heredoc terminates at the wrong `PY`.
+- Tests/Conformance/vectors.json — schemaVersion 1 -> 2, new `transportInvariants.i6NoChunkTempFiles`
+  (3 rows: fresh transfer, resume mid-file, resume at the last byte).
+- ios/Tests/AmphoraTests/ConformanceTests.swift — I6 runner. Per row: a scratch dir holding a
+  generated source file, installed as the process temp dir (TMPDIR) for the duration, inventoried
+  before and after; asserts the session was handed the ORIGINAL file (same path, same length on
+  disk), sizeBytes-resumeFrom expected bytes, no stagedRemainderPath, and zero files created.
+- ios/Sources/Amphora/Transport/NativeResumableTransport.swift — `BackgroundUploadStarting` protocol
+  seam + a `BackgroundUploadStarter` wrapper so the transport stays Sendable without a real
+  background URLSession in the test.
+- android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt — the same three rows against
+  RangeRequestBody: streams exactly source[offset, size) to its sink, declares that window as
+  Content-Length, leaves the source unmodified, creates no file (java.io.tmpdir repointed at the
+  scratch dir for the duration).
+- .github/workflows/ci.yml — `--port swift` step in ios, `--port kotlin` step in android; --stacktrace
+  on the assemble step.
+- docs/reference/conformance-vectors.md — NEW, linked from docs/README.md and state-machine.md I6.
+- gradle.properties — Gradle heap 2g -> 4g.
+- Tests/Conformance/check-single-fixture.sh — sentinel now matched as an "id"/value PAIR.
+
+OBSERVED
+- CI run 33042568129 (head 30f4d1e): android SUCCESS. Green path: ConformanceVectorsTest >
+  sharedVectorsMatchAndroidPort PASSED and > sharedI6VectorsHoldForTheAndroidTransport PASSED,
+  BUILD SUCCESSFUL in 25s. Control: state-machine drift -> sharedVectorsMatchAndroidPort FAILED
+  (AssertionError at ConformanceVectorsTest.kt:144) naming row-04-source-missing; I6 drift ->
+  sharedI6VectorsHoldForTheAndroidTransport FAILED (ConformanceVectorsTest.kt:239) with 'I6
+  violated'. Verdict line: "drift-control: 2 control(s) ran, 0 skipped, 0 failure(s) … every
+  divergence introduced was caught by the vectors that were supposed to catch it".
+- conformance-fixture, verify-policy, react-native: SUCCESS. ios: FAILURE, on exactly the two
+  pre-existing errors (NetworkGovernor.swift:23, TUSKitTransport.swift:27) and none of mine, so the
+  Swift drift step never executes on the runner.
+- Locally: `swift build --package-path ios -Xswiftc -warnings-as-errors` Build complete;
+  "Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6 transport
+  vectors)"; drift-control --port swift = 2 controls, 0 failures, messages 'Precondition failed:
+  row-04-source-missing: expected failed, got blocked' and 'i6-01-fresh-transfer: I6 violated — 1
+  file(s) materialised during the attempt (vector.chunk), expected 0'; .chief/verify.sh 3 passed,
+  0 failed, 1 SKIPPED (Gradle, no JDK).
+
+## Learnings for future iterations
+
+- THE CI SWIFT REJECTS `nonisolated(unsafe)` ON A STRUCT'S STORED PROPERTY ("'nonisolated' is
+  redundant … this is an error in Swift 6") while the local toolchain accepts it as a suppression.
+  To hold a non-Sendable reference inside a Sendable struct, wrap it in a small
+  `struct X: @unchecked Sendable` instead — that compiles identically in both places. Do not
+  discover this by pushing: it costs a CI round trip (~4 min).
+- The local Swift does NOT warn about a non-Sendable CLASS stored in a Sendable struct, but DOES
+  warn about a non-Sendable EXISTENTIAL (`any P`). So converting a concrete stored property to a
+  protocol for testability can turn a locally-green build red without changing anything real.
+- A CONTENT SENTINEL MUST BE SPECIFIC ENOUGH NOT TO MATCH PROSE. check-single-fixture.sh grepped
+  tracked *.json for `row-01-enqueue` and went red on de1b5cb because chief's own prd.json and
+  tasks/*.json quote that id when a story's notes describe the check. Matching `"id": "<sentinel>"`
+  fixes it and still catches a reformatted copy. Gates that fire on people writing about them get
+  ignored.
+- THE ANDROID JOB WAS FLAKING INSIDE KAPT, twice in three runs (33041928703 killed
+  kaptReleaseKotlin, 33042386253 killed kaptDebugKotlin), with no diagnostic beyond "A failure
+  occurred while executing KaptExecutionWorkAction" — and a rerun of the identical commit passed.
+  Both kapt tasks run concurrently in-process and the daemon heap was 2g; 4g plus --stacktrace.
+  If it recurs, the stacktrace is now in the log. `gh run rerun <id> --failed` is how to tell a
+  flake from a real failure.
+- Gradle's `--tests 'dev.amphora.ConformanceVectorsTest'` filter works on `testDebugUnitTest`, and
+  android/build/test-results/testDebugUnitTest/*.xml carries the assertion message even when the
+  console output elides it. Cat the XML when grepping for WHY a Kotlin test failed.
+- Swift's FileManager enumerator reports /private/var/… while `temporaryDirectory.path` is /var/…;
+  resolve symlinks on BOTH sides before diffing directory inventories or the relative paths in the
+  failure message come out mangled.
+- The negative-control pattern in this repo is now: mutate → run → require red FOR THE NAMED REASON
+  → restore → prove the tree is byte-identical. `.chief/tests/verify-skip-policy.sh` and
+  `Tests/Conformance/drift-control.sh` are the two instances; copy their shape rather than writing
+  a fresh one.
