@@ -48,3 +48,87 @@ Observed:
   `gh repo view --json visibility`, `git ls-remote --heads origin`.
 - A run's **conclusion** is the claim. "CI is wired" without a run id behind it is the failure
   mode this tasklist was written to end.
+
+---
+
+## US-2 — Kotlin actually compiles, on a machine that has a toolchain
+
+The Kotlin port had never been handed to a compiler. It has now, three times, and it is green.
+
+**Evidence.** Run **33039508625** (push, `chief/100-android-into-ci`, head `09eac78`) —
+`android` job **success**. `./gradlew --no-daemon :android:assemble` → BUILD SUCCESSFUL in 1m 46s
+(54 tasks). `./gradlew --no-daemon :android:testDebugUnitTest` → BUILD SUCCESSFUL in 26s:
+
+    ConformanceVectorsTest > sharedVectorsMatchAndroidPort                        PASSED
+    StorageGovernorTest > reserveDelegatesToAllocatorBeforeReturningReservation   PASSED
+    TusdIntegrationTest > completesMultiMegabyteUploadAndTerminatesResource       SKIPPED
+
+The overall run conclusion is still `failure`, entirely because of the `ios` Sendable error US-1
+recorded — no story in this tasklist owns it. `react-native` success, `android` success.
+
+**Files changed.** `gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.{jar,properties}` (new,
+Gradle 8.10.2); `.github/workflows/ci.yml`; `android/build.gradle.kts`;
+`android/src/main/kotlin/dev/amphora/transport/CallAwait.kt` (new);
+`.../core/SourceResolver.kt`; `.../work/UploadWorker.kt`; `.chief/verify.sh`.
+
+### What the compiler found — five defects, in the order it found them
+
+1. **`androidx.room:room-ktx` missing.** kapt rejected *every* `suspend`/`Flow` DAO query:
+   "To use Coroutine features, you must add `ktx` artifact from Room". Run 33038526156.
+2. **`Call.await()` had never been written.** `TusTransport` called it at four sites. Added
+   `transport/CallAwait.kt` — an `enqueue`-based `suspendCancellableCoroutine` bridge, so
+   cancelling the coroutine cancels the HTTP call instead of leaking the socket.
+3. **`UploadWorker` referenced `AmphoraGraph` with no import.**
+4. **`ParcelFileDescriptor.seekTo()` does not exist.** `SourceResolver.open` used it to probe
+   seekability. Replaced with `Os.lseek(fd, 0, SEEK_SET)`, which is what actually raises
+   `ErrnoException(ESPIPE)` on a pipe — the behaviour the surrounding comment already claimed.
+   Run 33039150462.
+5. **`CoroutineWorker.onStopped()` is final.** WorkManager expresses the stop as *cancellation of
+   `doWork`'s coroutine*, so the override could never have existed. The offset flush and lease
+   release moved into a `withContext(NonCancellable)` `finally` — `NonCancellable` is load-bearing
+   there, since the job is already cancelled when Android 15 pulls the FGS budget.
+   Run 33039150462.
+
+### Toolchain and wrapper
+
+Gradle **8.10.2** pinned (AGP 8.6.1 needs ≥ 8.7; Kotlin 2.0.21). Both the distribution
+(`31c55713…4c26`) and the wrapper jar (`2db75c40…8046`) are checksum-pinned and match
+`services.gradle.org`'s published values. CI now runs `gradle/actions/wrapper-validation@v4`
+(**success**) so the committed binary is checked against Gradle's known-good list, and invokes
+`./gradlew` rather than the runner image's ambient gradle — which was 9.7.0 and could change under
+us without a commit here.
+
+### Test-harness fixes (the tests could not have run without these)
+
+- `testOptions.unitTests.isReturnDefaultValues = true` — the mockable `android.jar` throws
+  `RuntimeException("Stub!")` from every framework method, and `StorageGovernorTest` subclasses a
+  real `ContextWrapper`.
+- `testImplementation("org.json:json:20240303")` — `org.json` is stubs-only in `android.jar`, and
+  `ConformanceVectorsTest` parses the shared vector file with it.
+- unit-test `workingDir = rootDir` — both ports read the *same* repo-root-relative
+  `Tests/Conformance/vectors.json`; Gradle runs tests from `android/`. Deliberately not a second
+  copy of the fixture, and deliberately not a fix to the path itself, which is `110`'s story.
+- `kapt` `room.schemaLocation` — `UploadDatabase` sets `exportSchema = true` and was exporting
+  nothing.
+- `testLogging { events("passed", "skipped", "failed") }` — so a task that runs zero tests cannot
+  read as one that runs forty.
+
+### Learnings for future iterations
+
+- **The wrapper alone breaks the local gate.** `.chief/verify.sh` branched on `[ -x ./gradlew ]`;
+  committing one made it try to run Gradle on a Mac with no JDK, which would have turned a
+  legitimate SKIP into a FAIL. It now probes `java -version` first. US-3 owns making that
+  distinction rigorous, but it had to be correct the moment the wrapper landed.
+- **CI is the only Kotlin compiler available here.** No JDK, no Android SDK locally, and the SDK is
+  far too heavy to install for this. Budget ~3 minutes per Android round trip and batch fixes by
+  reading every source file before pushing; that is what kept this to three runs for five defects.
+- **`gh run view <id> --job=<jobId> --log`** is the command that gives you per-test lines;
+  `--log-failed` gives you nothing once the job is green.
+- **Two real defects the compiler cannot see, left unfixed and recorded here** (neither is in any
+  story's criteria; both are behavioural):
+  - `AmphoraGraph.of(context)` constructs a **brand-new graph on every call** — no caching, unlike
+    `AmphoraUploader.get`. Every `UploadWorker` execution therefore builds its own Room database
+    and its own governors, which defeats the single-runner lease it relies on.
+  - `Reconciler.liveWorkJobIds()` calls `getWorkInfosByTag("amphora-job")`, but `UploadWorker`
+    tags work as `"amphora-job:$jobId"`. The tag never matches, so reconciliation adopts nothing
+    and will restart work that is already running.
