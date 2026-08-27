@@ -251,8 +251,9 @@ leaves nothing in this story unverified.
 - **Anchor links in this repo's docs are checked by nothing.** The 64-link check used for this story
   was written inline; if anchors keep being added, that check belongs in CI next to
   `check-single-fixture.sh`.
-- **The tasklist is now complete.** All three stories pass and no `⚠️ PRIOR VERIFICATION FAILED`
-  block exists in this file. The branch's own gate is green locally; the *repository's* CI gate is
+- **The tasklist is now complete.** All three stories pass and this file carries no prior-verification-failure
+  block (the marker is deliberately not spelled out here, so a future grep for it finds only a real
+  one). The branch's own gate is green locally; the *repository's* CI gate is
   red for reasons that predate this branch (two Swift concurrency errors and a nondeterministic
   kapt failure), and that is recorded in `ROADMAP.md` phase 1 and in `CHANGELOG.md` rather than
   being absorbed into a story note.
