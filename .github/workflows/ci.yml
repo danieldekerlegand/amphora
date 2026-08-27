@@ -51,6 +51,18 @@ jobs:
       - name: Run Android conformance vectors
         run: ./gradlew --no-daemon :android:testDebugUnitTest
 
+  # A gate that cannot run reports success, which is worse than having no gate. `.chief/verify.sh`
+  # deliberately reports SKIPPED as a third outcome and treats it as FATAL when CI=true — this job
+  # is the counterfactual that proves it, running verify.sh with an emptied PATH and asserting the
+  # local verdict (SKIPPED, exit 0) and the CI verdict (FAIL, non-zero) actually differ.
+  # See docs/reference/continuous-integration.md#a-skipped-check-is-not-a-passing-check.
+  verify-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: A skipped check must never read as a passing one
+        run: .chief/tests/verify-skip-policy.sh
+
   react-native:
     runs-on: ubuntu-latest
     defaults:
