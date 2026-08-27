@@ -65,11 +65,19 @@ docs/guides/             host-app integration
 android/                 Kotlin: state machine, Room registry, governors, WorkManager slices
 ios/Sources/Amphora/     Swift: state machine port, background session, two transports, governors
 packages/react-native/   TurboModule spec and JS control surface
+Tests/Conformance/       vectors.json — ONE file, read by both ports — plus the drift control
+integration/tusd/        the real-wire harness: tusd v2 + MinIO via Docker Compose
 ```
+
+Working in this repository: [`CLAUDE.md`](CLAUDE.md) covers what a session needs and cannot derive
+from the tree — the no-chunk-temp-files commitment, why a `SKIPPED` check is not a passing one, why
+`swift test` reports "no tests found" while the suite is fine, and the adopt-the-protocol boundary.
+What has changed and when is in [`CHANGELOG.md`](CHANGELOG.md); nothing is released yet.
 
 ## Status
 
-Specification plus Android, iOS, and RN skeletons — and, as of **2026-08-27, bytes move.**
+Specification, both platform ports, and the RN control surface — and, as of
+**2026-08-27, bytes move.**
 
 Both ports have completed a real upload against a real tusd v2 + S3 server, each across a real
 interruption rather than a simulated one:
@@ -108,8 +116,19 @@ Implemented: both state-machine ports, both engines, both reconcilers, the wire 
 dialects (create / head / append / terminate), the governors' policy logic, the iOS
 background-session delegate and task re-identification, and the RN control surface.
 
-Stubbed: `UploadStore`'s SQLite backing (iOS), `PHAsset` export and remainder writing (iOS),
-seekable `content://` opening and provider staging (Android).
+**Nothing in this repository is stubbed.** The three that were — `UploadStore`'s SQLite backing and
+`PHAsset` export plus remainder writing on iOS, seekable `content://` opening plus provider staging
+on Android — were closed by tasklists `60` and `70` and are real code:
+[`Store/SQLiteUploadStore.swift`](ios/Sources/Amphora/Store/SQLiteUploadStore.swift),
+[`Governor/StorageGovernor.swift`](ios/Sources/Amphora/Governor/StorageGovernor.swift) (`writeRemainder`,
+`exportPhotosAsset`), and both ports' `SourceResolver` with the Android
+[`store/`](android/src/main/kotlin/dev/amphora/store) package behind it.
+
+What is missing is an absence rather than a stub: `packages/react-native` declares the codegen spec
+`AmphoraSpec`, and nothing on either native side implements it — no `RCTBridgeModule`, no
+`ReactContextBaseJavaModule`, no podspec, no Gradle module for the package. The control surface
+typechecks, builds, and is wired to no bytes. That is
+[roadmap phase 6](ROADMAP.md#phase-6--host-adoption-via-the-react-native-turbomodule).
 
 **The conformance vectors exist and both ports run them.** `Tests/Conformance/vectors.json` is one
 file — 40 transition rows plus 3 transport rows — read by Swift and Kotlin alike, and both suites
@@ -119,3 +138,21 @@ cover, is in [Conformance vectors](docs/reference/conformance-vectors.md).
 
 The real-wire tusd v2 + S3 environment and opt-in Swift/Kotlin integration checks live in
 [`docs/guides/tusd-integration.md`](docs/guides/tusd-integration.md).
+
+**What is still unverified is the larger half.** All 40 cells of the device matrix read
+`NOT YET VERIFIED — physical device`, the CI gate is currently red, and the React Native control
+surface is bound to no native implementation. [`ROADMAP.md`](ROADMAP.md) states the measured
+position cell by cell, names the phases that remain, and records the non-goals — including the
+no-chunk-temp-files commitment — and the open decisions.
+
+## Licence
+
+**MIT** — see [`LICENSE`](LICENSE).
+
+Chosen because this is a library meant to be embedded in other people's applications, including
+closed-source ones, so any reciprocal term would be a barrier to the adoption that is the whole
+point. Nothing in the dependency graph pulls a copyleft obligation inward: the iOS target has no
+external dependencies at all, the Android dependencies are Apache-2.0, and the protocol is
+implemented from the IETF draft rather than vendored from anyone. The reasoning, the audit it rests
+on, and the file-level convention (root `LICENSE` plus SPDX in each distributable manifest, no
+per-file headers) are in [Licensing](docs/reference/licensing.md).

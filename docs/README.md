@@ -1,9 +1,22 @@
 # Amphora documentation
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
 
 Every document in this repository is linked from here. Unlinked is unreachable, and unreachable
 documentation still greps as current.
+
+## Where this is
+
+- [Roadmap](../ROADMAP.md) — the measured position as of 2026-08-27, the phases named for what
+  remains (a total gate, binding vectors, a gated real-wire environment, the 40 device cells, the
+  storage governor under genuine pressure, host adoption, publication), the three non-goals
+  including the no-chunk-temp-files commitment, and the open decisions.
+- [Changelog](../CHANGELOG.md) — what changed and when, under `[Unreleased]` because nothing is
+  released yet. Entries dated before 2026-08-27 were reconstructed from git history and the tasklist
+  records, and are marked as such; one of them records a correction rather than the original claim.
+- [Working in this repository](../CLAUDE.md) — orientation for a session, covering what the tree does
+  not state: the adopt-the-protocol boundary, the no-chunk-temp-files commitment, why a `SKIPPED`
+  check is never a passing one, and why `swift test` reports "no tests found" while the suite passes.
 
 ## Reference
 
@@ -34,6 +47,10 @@ documentation still greps as current.
   public-visibility decision and its billing reason, and why the workflow triggers on `push`
   rather than `pull_request`. Also the three-outcome verify policy: why a SKIPPED check is
   tolerated on a developer machine and fatal in CI, and never reads as a pass in either.
+- [Licensing](reference/licensing.md) — why MIT rather than Apache-2.0 or a reciprocal licence, the
+  dependency audit behind that choice (including the one AGPL component in the test harness and why
+  nothing travels inward from it), and the file-level convention: root `LICENSE` plus SPDX in each
+  distributable manifest, no per-file headers.
 - [The verification record](reference/verification-record.md) — the rule that a story may not be
   marked passing on work its own notes record as not having run, what breaking it cost this
   repository at tasklist `80`, and what an evidence-bearing note has to contain.
