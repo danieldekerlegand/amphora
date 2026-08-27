@@ -23,12 +23,19 @@ else
   echo "SKIPPED Swift: swift toolchain or ios/Package.swift unavailable; Swift build and tests unverified"
 fi
 
-if [ -x ./gradlew ]; then
-  run_check "Gradle build" ./gradlew build
-elif command -v gradle >/dev/null 2>&1; then
-  run_check "Gradle build" gradle build
+# A committed ./gradlew is not on its own enough to run one: the wrapper needs a JDK, and on a
+# bare macOS box /usr/bin/java is a stub that exits non-zero. Probe for a real runtime, or this
+# reports FAIL on a machine that simply has no toolchain.
+if java -version >/dev/null 2>&1; then
+  if [ -x ./gradlew ]; then
+    run_check "Gradle build" ./gradlew build
+  elif command -v gradle >/dev/null 2>&1; then
+    run_check "Gradle build" gradle build
+  else
+    echo "SKIPPED Gradle: Gradle wrapper/command unavailable; Android build unverified"
+  fi
 else
-  echo "SKIPPED Gradle: Gradle wrapper/command unavailable; Android build unverified"
+  echo "SKIPPED Gradle: no JDK on PATH; Android build unverified"
 fi
 
 if command -v npm >/dev/null 2>&1 && [ -f packages/react-native/package.json ]; then

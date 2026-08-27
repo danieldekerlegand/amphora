@@ -40,11 +40,16 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK platform
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      # gradle-wrapper.jar is a committed binary. This checks it against Gradle's published
+      # list of known-good wrapper jars, so the blob cannot be quietly swapped.
+      - uses: gradle/actions/wrapper-validation@v4
       - uses: gradle/actions/setup-gradle@v4
+      # ./gradlew, not `gradle`: the runner image's own Gradle is whatever it happens to ship
+      # (9.7.0 on 2026-08-27) and can change under us without a commit here.
       - name: Build Android library
-        run: gradle :android:assemble
+        run: ./gradlew --no-daemon :android:assemble
       - name: Run Android conformance vectors
-        run: gradle :android:testDebugUnitTest
+        run: ./gradlew --no-daemon :android:testDebugUnitTest
 
   react-native:
     runs-on: ubuntu-latest
