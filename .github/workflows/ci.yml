@@ -52,7 +52,8 @@ jobs:
       # ./gradlew, not `gradle`: the runner image's own Gradle is whatever it happens to ship
       # (9.7.0 on 2026-08-27) and can change under us without a commit here.
       - name: Build Android library
-        run: ./gradlew --no-daemon :android:assemble
+        # --stacktrace: the kapt worker failures this job has hit print nothing else.
+        run: ./gradlew --no-daemon --stacktrace :android:assemble
       - name: Run Android conformance vectors
         run: ./gradlew --no-daemon :android:testDebugUnitTest
       # The Kotlin half of the same counterfactual, and the half that matters most here: no JDK
