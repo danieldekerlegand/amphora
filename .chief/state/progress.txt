@@ -1,41 +1,50 @@
-# Chief Progress — 90-environment-matrix
-Started: Thu Aug 20 02:46:23 CDT 2026
+# Chief Progress — 100-android-into-ci
+Started: Wed Aug 26 23:12:47 CDT 2026
 ---
 
-## US-1 — A written environment matrix, with each cell's verdict and how it was reached
+## US-1 — The repository has a remote, and the workflow fires on how work actually lands
 
-Added `docs/reference/environment-matrix.md` and linked it from `docs/README.md`. The matrix
-covers iOS 17+ native and pre-17 TUSKit transports, Android 14/15 workers, platform source types,
-and four interruption modes. Each cell names `AUTOMATED`, `MANUAL-ON-DEVICE`, or `NOT YET VERIFIED`,
-with physical-device-only gaps called out rather than replaced by simulator evidence. The document
-also records the checked-in code-path evidence for both iOS transports and the evidence needed to
-close a manual cell.
+Implemented in commit `a84c63b` (previous iteration ended before the bookkeeping); this iteration
+verified every criterion against reality and recorded the evidence.
 
-Verification: `.chief/verify.sh` passed Swift build, Swift tests (`Amphora path tests: 44 passed`),
-and TypeScript typecheck; Gradle was skipped because no Gradle toolchain was available.
+Files changed by the story: `.github/workflows/ci.yml` (trigger + a comment block explaining why
+`push` and not `pull_request`), `docs/reference/continuous-integration.md` (new), `docs/README.md`
+(link). This iteration changed only `.chief/state/prd.json`, `tasks/chief/100-android-into-ci.json`
+and this log.
+
+Observed:
+- `origin` = https://github.com/danieldekerlegand/amphora; `git ls-remote --heads origin` shows
+  `refs/heads/main` at `2a93917`, identical to local `main`. The remote exists and main is pushed.
+- Visibility is **PUBLIC** (`gh repo view --json visibility` → `"PUBLIC"`), so Actions minutes are
+  free and the blocked private-repo billing cannot stop a run. Recorded, with the if-ever-private
+  consequence, in `docs/reference/continuous-integration.md`.
+- **Run 33038526156** — push, `chief/100-android-into-ci`, head `a84c63b`, 2m4s, conclusion
+  **failure**. Jobs: `react-native` **success**; `ios` **failure**; `android` **failure**.
+- Local `.chief/verify.sh`: PASS Swift build, PASS Swift tests, PASS TypeScript typecheck,
+  SKIPPED Gradle (no toolchain locally). 0 failures.
+
+### Two real failures the first-ever run exposed
+
+1. **android** — `gradle :android:assemble` fails. This is exactly what US-2 exists to confront;
+   the first genuine compile of the Kotlin port has now happened and it is red.
+2. **ios** — `swift build --package-path ios -Xswiftc -warnings-as-errors` fails with
+   `stored property 'session' of 'Sendable'-conforming struct '...' has non-sendable type
+   'BackgroundSessionManager'` in both `Transport/NativeResumableTransport.swift:16` and
+   `Transport/TUSKitTransport.swift:27`; `Session/BackgroundSessionManager.swift:19` declares
+   `public final class BackgroundSessionManager: NSObject` with no `Sendable` conformance.
+   **This is NOT covered by any story in this tasklist** and it is not caught locally, because
+   `.chief/verify.sh` runs `swift build` *without* `-warnings-as-errors` while CI runs it *with*.
+   Someone has to close that gap or the branch's CI stays red for a reason no story owns.
 
 ### Learnings for future iterations
 
-Environmental evidence must distinguish checked-in code-path tests from physical-device behavior;
-simulators/emulators cannot substantiate background budgets, process death, storage reclamation, or
-radio transitions. Keep the matrix cells explicit so later device runs can replace only the relevant
-verdicts.
-
-## US-2 — The four environmental claims are each demonstrated
-
-Added `docs/reference/environment-evidence.md` and linked it from `docs/README.md`. The ledger
-captures the observed automated evidence for tus offset recovery/cancelation and typed storage
-pressure cleanup, while explicitly preserving physical-device gaps for app suspension, process
-termination as an OS event, Android's six-hour `dataSync` budget exhaustion, and Wi-Fi→cellular
-handoff. It includes the exact reproduction commands and the required fields for future device
-recordings.
-
-Verification: `.chief/verify.sh` passed Swift build, Swift tests (`Amphora path tests: 44 passed`),
-and TypeScript typecheck; Gradle was skipped because no Gradle toolchain was available.
-
-### Learnings for future iterations
-
-Environmental claims must separate automated protocol/state evidence from OS behavior. A successful
-host-side test cannot stand in for suspension, process death, storage reclamation, foreground-service
-quota exhaustion, or radio handoff; retain the NOT YET VERIFIED label until a device log records the
-required job ID, offset, and final state.
+- The local gate and the CI gate are **not running the same commands**. `verify.sh` omits
+  `-Xswiftc -warnings-as-errors` and skips Gradle entirely; CI does neither. A green
+  `verify.sh` therefore does not predict a green run — check `gh run list` before believing a
+  branch is clean. US-3 is the story that should encode this difference rather than leave it
+  implicit.
+- Evidence commands that actually settle things here: `gh run list --limit 5`,
+  `gh run view <id> --json conclusion,jobs`, `gh run view <id> --log-failed`,
+  `gh repo view --json visibility`, `git ls-remote --heads origin`.
+- A run's **conclusion** is the claim. "CI is wired" without a run id behind it is the failure
+  mode this tasklist was written to end.
