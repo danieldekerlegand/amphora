@@ -158,7 +158,7 @@ FILES CHANGED
 - Tests/Conformance/check-single-fixture.sh — sentinel now matched as an "id"/value PAIR.
 
 OBSERVED
-- CI run 33042568129 (head 30f4d1e): android SUCCESS. Green path: ConformanceVectorsTest >
+- CI run 33042568129 (head 9ddf6f2): android SUCCESS. Green path: ConformanceVectorsTest >
   sharedVectorsMatchAndroidPort PASSED and > sharedI6VectorsHoldForTheAndroidTransport PASSED,
   BUILD SUCCESSFUL in 25s. Control: state-machine drift -> sharedVectorsMatchAndroidPort FAILED
   (AssertionError at ConformanceVectorsTest.kt:144) naming row-04-source-missing; I6 drift ->
