@@ -89,3 +89,87 @@ typecheck PASS. Gradle build SKIPPED — no JDK on PATH — so the one-line comm
   README now says bytes move and the vectors exist and both ports run them. US-3's real remaining
   target is the `Stubbed:` list (which `60`/`70` closed), plus the new `CLAUDE.md` and
   `CHANGELOG.md`. Read the README before trusting the description's quotes.
+
+---
+
+## US-2 — A roadmap that states the measured position, not the intended one (done)
+
+**What I did.** Wrote `ROADMAP.md` (337 lines) at the repo root, indexed it in `docs/README.md`
+under a new `## Where this is` section, and linked it from `README.md`'s Status section.
+
+**Section 1 is a 14-row evidence table, not prose**, in the register the matrix already uses:
+AUTOMATED / MANUAL-ON-DEVICE / NOT YET VERIFIED, every cell naming the run id, command or file the
+verdict was read from. The honest summary it lands on: the protocol layer, both state machines and
+I6 are measured against a real server; everything *environmental* — the part this library exists
+for — is unverified, and the gate that would stop the measured half regressing is itself red.
+
+**Seven phases**, ordered by dependency and carrying no dates (dates would be intentions, and this
+repo has already paid once for recording an intention as a result): total gate → binding vectors →
+gated real-wire environment → the 40 device cells → storage governor under genuine pressure → RN
+TurboModule host adoption → publication. Each states the observation that closes it. Phase 5 fixes
+the order explicitly: **reproduce the `TransferUtility` bug FIRST**, because a run showing the new
+implementation surviving pressure otherwise proves "the device had enough space", not "the design
+retired the bug". Phase 4 is ranked 1–5 by what each row would retire rather than pretending a
+40/40 sweep is imminent.
+
+**Non-goals**: no web transfer code, no re-specification of the protocol, no chunk temp files. The
+third gets the most space deliberately — it is argued as a commitment, tied to the `Caches`
+reclamation failure mode, and closed with the enforcement (3 I6 vectors + `drift-control.sh` driving
+`i6-01-fresh-transfer` red on both ports) so a future contributor meets the vectors before the
+temptation.
+
+### What was MEASURED, and what was refused
+
+Criterion 5 is the whole point of writing this last, so nothing was rounded up:
+
+- **CI is RED right now.** Run `33044503283` (head `f769a6f`): `ios` FAILURE
+  (`NetworkGovernor.swift:23` captured `var self`; `TUSKitTransport.swift:27` non-`Sendable`
+  `session`), `android` FAILURE (`:android:kaptReleaseKotlin` → `Empty schema file`);
+  `react-native`, `conformance-fixture`, `verify-policy` SUCCESS.
+- **The android failure is NONDETERMINISTIC and the roadmap says so.** The job was SUCCESS at
+  `89583f9` and FAILURE at `f769a6f`, and `git diff 89583f9 f769a6f` is **one JSON tasklist file** —
+  no Kotlin, no Gradle, no Room entity. A gate that flips verdict on identical inputs gates nothing,
+  so phase 1 requires the kapt failure be fixed at the root or reproduced on demand; a green run
+  after a red one on unchanged input closes nothing.
+- **The Swift real-wire run is local-only.** The `ios` job dies at its first step, so `swift run
+  AmphoraPathTests` and the Swift drift control *never execute in CI* — the strongest evidence this
+  repo has for the Swift port is one terminal's output and nothing would notice it regressing.
+- **Gradle SKIPS on this machine**, so every Android claim — including the Kotlin real-wire run —
+  rests on CI alone. When CI is red or flaky, that is the whole Android evidence chain.
+
+### New finding, not recorded anywhere before
+
+**The React Native package is bound to nothing.** `packages/react-native/src/NativeAmphora.ts`
+declares `codegenConfig.name: "AmphoraSpec"`; grepping `AmphoraSpec`, `NativeAmphora`,
+`RCTBridgeModule` and `ReactContextBaseJavaModule` across all `*.swift`, `*.kt`, `*.h`, `*.mm`
+returns **zero hits**, and there is no podspec and no Gradle module for the package. It typechecks,
+builds, passes `check:control-surface` — and is a control surface attached to no bytes. That is
+phase 6, and it was not visible from any existing doc.
+
+**Files changed.** `ROADMAP.md` (new), `docs/README.md` (indexed), `README.md` (linked, plus a
+paragraph naming the unverified half). `docs/reference/licensing.md:95`'s pre-existing forward-link
+`../../ROADMAP.md` now resolves.
+
+**Verification.** Link check across `ROADMAP.md`, `README.md`, `docs/README.md`,
+`docs/reference/licensing.md`: **0 broken**. `.chief/verify.sh`: **3 passed, 1 skipped, 0 failed** —
+PASS Swift build, PASS Swift tests (46 passed), PASS TypeScript typecheck, SKIPPED Gradle (no JDK on
+PATH). Docs-only change touching nothing Android-shaped, so the skip leaves nothing in this story
+unverified.
+
+### Learnings for future iterations
+
+- **Do not trust a single green CI job for Android.** `89583f9` green / `f769a6f` red on a
+  JSON-only diff is a live flake in `:android:kaptReleaseKotlin` (Room schema export, `Empty schema
+  file`). If a future story needs a green android job, re-run before concluding the branch broke it.
+- **`gh run view <id> --json jobs` is the fast way to get per-job conclusions**; `--log-failed |
+  grep -E "error: "` gets the actual compiler errors without paging the whole log.
+- **The PRD description is stale in two more places** (US-1's note caught one): it says "nothing has
+  moved a byte" and "4,868 lines". Bytes moved on 2026-08-27 (`120`), and the ports are ~5,377 lines
+  across `ios/Sources`, `android/src`, `packages/react-native/src` and `Tests`. Read the tree.
+- **US-3 remains.** Its real targets: README's `Stubbed:` list (`60`/`70` closed all three — iOS has
+  `Store/SQLiteUploadStore.swift`, `PHAsset` handling in `SourceResolver`/`StorageGovernor`; Android
+  has the full `store/` and `core/SourceResolver.kt`), plus the new `CLAUDE.md` and `CHANGELOG.md`.
+  For `CLAUDE.md`, the four points its criterion names are all already sourced: no-chunk-temp-files
+  (README + ROADMAP §3), local-SKIP vs CI-FAIL (`continuous-integration.md`), the
+  `.executableTarget`/`swift run AmphoraPathTests` gotcha (Codebase Patterns above), and
+  adopt-the-protocol/build-the-clients (README).
