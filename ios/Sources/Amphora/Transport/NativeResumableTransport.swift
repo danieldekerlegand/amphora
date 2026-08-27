@@ -14,6 +14,28 @@ public protocol BackgroundUploadStarting: AnyObject {
 
 extension BackgroundSessionManager: BackgroundUploadStarting {}
 
+/// A `Sendable` handle to whatever starts background uploads.
+///
+/// `UploadTransport` is `Sendable`, so a transport that stores a session reference directly stores
+/// a non-`Sendable` class inside a `Sendable` struct — the complaint the `ios` CI job already
+/// carries for `TUSKitTransport`, and one this seam would otherwise add a second instance of. The
+/// wrapper is where the assertion is made instead of at the top of a whole class: the only thing
+/// reachable through it is `startUpload`, which touches nothing but `URLSession`, and `URLSession`
+/// is documented as safe to use from any thread. It is deliberately NOT the Sendable redesign
+/// `BackgroundSessionManager` still needs — see docs/reference/continuous-integration.md,
+/// "Known divergence".
+public struct BackgroundUploadStarter: @unchecked Sendable {
+    private let session: any BackgroundUploadStarting
+
+    public init(_ session: any BackgroundUploadStarting) {
+        self.session = session
+    }
+
+    func startUpload(jobId: String, request: URLRequest, fileURL: URL, expectedBytes: Int64) -> Int {
+        session.startUpload(jobId: jobId, request: request, fileURL: fileURL, expectedBytes: expectedBytes)
+    }
+}
+
 /// iOS 17+ path. The good one.
 ///
 /// `URLSession` implements `draft-ietf-httpbis-resumable-upload` natively: it discovers server
@@ -27,14 +49,7 @@ extension BackgroundSessionManager: BackgroundUploadStarting {}
 @available(iOS 17.0, *)
 public struct NativeResumableTransport: UploadTransport {
 
-    // `nonisolated(unsafe)` is a NARROW suppression, not the Sendable fix this file still needs.
-    // Storing the session as a protocol existential makes the pre-existing "non-Sendable stored
-    // property of a Sendable-conforming struct" complaint reachable by the local toolchain as well
-    // as the CI one, which would have turned the local build red for a design problem that predates
-    // this seam and is recorded in docs/reference/continuous-integration.md, "Known divergence". The
-    // marker asserts only what the concrete type already asserted implicitly: one owner hands this
-    // reference over, and the session manager serialises its own state internally.
-    private nonisolated(unsafe) let session: any BackgroundUploadStarting
+    private let session: BackgroundUploadStarter
     private let dialect: any WireDialect
     private let control: ControlPlaneClient
 
@@ -43,7 +58,7 @@ public struct NativeResumableTransport: UploadTransport {
         dialect: any WireDialect = RufhDialect(),
         control: ControlPlaneClient
     ) {
-        self.session = session
+        self.session = BackgroundUploadStarter(session)
         self.dialect = dialect
         self.control = control
     }

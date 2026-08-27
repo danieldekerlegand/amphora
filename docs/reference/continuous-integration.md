@@ -196,8 +196,22 @@ cannot be re-flattened without turning CI red.
 Two gaps remain, and both are recorded rather than papered over:
 
 - `verify.sh` runs `swift build --package-path ios`; CI runs it with `-Xswiftc -warnings-as-errors`.
-  The `ios` job is currently red on a `Sendable` conformance error that the local command does not
-  surface. Nothing in this repository owns that fix yet.
+  The `ios` job is red on Swift-concurrency errors that the local toolchain does not surface at all,
+  so a green local build does not predict a green run. As observed on run 33041928703, two remain
+  and nothing in this repository owns either:
+
+  | Where | Error |
+  |---|---|
+  | `Governor/NetworkGovernor.swift:23` | reference to captured `var 'self'` in concurrently-executing code |
+  | `Transport/TUSKitTransport.swift:27` | stored property `session` of `Sendable`-conforming struct has non-`Sendable` type `BackgroundSessionManager` |
+
+  A third, the same complaint against `NativeResumableTransport`, was retired by the I6 seam: that
+  transport now stores a `BackgroundUploadStarter`, a wrapper whose `@unchecked Sendable` claim
+  covers exactly one call. That is a narrow assertion about `startUpload`, not the redesign
+  `BackgroundSessionManager` still needs — `TUSKitTransport` holds the same object directly and is
+  still red for it. Because the build fails at that first step, the `ios` job never reaches
+  `swift run` or the Swift drift control; both are run locally instead, and story notes record what
+  they printed.
 - `verify.sh` runs `./gradlew build`; CI runs `:android:assemble` and `:android:testDebugUnitTest`.
 
 A green `verify.sh` therefore does not predict a green run. Check `gh run list` before believing a
