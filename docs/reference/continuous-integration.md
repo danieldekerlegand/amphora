@@ -140,6 +140,9 @@ CI is the only place the Kotlin vectors have been driven red.
 
 ## A skipped check is not a passing check
 
+The same rule applied to the story record — and what it cost when it was broken — is
+[The verification record](verification-record.md).
+
 `.chief/verify.sh` reports **three** outcomes, not two:
 
 | Outcome | Meaning |

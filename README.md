@@ -1,6 +1,6 @@
 # Amphora
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
 
 A resumable, backgroundable, storage-aware and network-aware uploader for very large files,
 across **React Native · iOS/Swift · Android/Kotlin · web**.
@@ -69,7 +69,26 @@ packages/react-native/   TurboModule spec and JS control surface
 
 ## Status
 
-Specification plus Android, iOS, and RN skeletons. Nothing moves bytes yet.
+Specification plus Android, iOS, and RN skeletons — and, as of **2026-08-27, bytes move.**
+
+Both ports have completed a real upload against a real tusd v2 + S3 server, each across a real
+interruption rather than a simulated one:
+
+- **Swift**, locally against the Compose stack (`integration/tusd/swift-wire.sh`, exit 0): 8 MiB
+  split across a genuine process death — `kill(getpid(), SIGKILL)`, observed exit status 137 — with
+  a second OS process handed nothing but the upload URL resuming from server offset 5505024 and
+  completing at 8388608. The object read back out of MinIO matched the source by SHA-256.
+- **Kotlin**, in CI (run `33044191974`, job `android`): 8 MiB across an aborted `PATCH` — the
+  production `SliceDeadlineReached` path, with `Content-Length` outstanding — resumed by a brand-new
+  client from server offset 6553600, checksum verified.
+- **The no-chunk-temp-files claim is now measured, not read off the source.** Peak extra disk during
+  an 8 MiB transfer: **4 KiB** (Swift) and **0 KiB** (Kotlin). A remainder-staging transport would
+  have needed roughly 2816 KiB.
+
+Before that date this repository had never moved a byte, and for a week it said otherwise: tasklist
+`80` recorded a live-run story as passing while its own notes said the Docker daemon was
+unavailable. That record has been corrected, and the rule it broke is written down in
+[The verification record](docs/reference/verification-record.md).
 
 **iOS builds clean as of 2026-08-20** — `swift build` from `ios/`, zero errors and zero warnings.
 It previously could not be built at all: there was no `Package.swift`, so "it does not compile"
@@ -92,8 +111,11 @@ background-session delegate and task re-identification, and the RN control surfa
 Stubbed: `UploadStore`'s SQLite backing (iOS), `PHAsset` export and remainder writing (iOS),
 seekable `content://` opening and provider staging (Android).
 
-No conformance vectors yet. Until they exist, the two state-machine ports are only as aligned as
-review makes them — that is the next thing worth doing.
+**The conformance vectors exist and both ports run them.** `Tests/Conformance/vectors.json` is one
+file — 40 transition rows plus 3 transport rows — read by Swift and Kotlin alike, and both suites
+run in CI. `Tests/Conformance/drift-control.sh` is the negative control that proves the suite would
+catch a divergence rather than merely report agreement. Scope, including what the vectors do *not*
+cover, is in [Conformance vectors](docs/reference/conformance-vectors.md).
 
 The real-wire tusd v2 + S3 environment and opt-in Swift/Kotlin integration checks live in
 [`docs/guides/tusd-integration.md`](docs/guides/tusd-integration.md).
