@@ -5,6 +5,13 @@
 Every document in this repository is linked from here. Unlinked is unreachable, and unreachable
 documentation still greps as current.
 
+## Where this is
+
+- [Roadmap](../ROADMAP.md) — the measured position as of 2026-08-27, the phases named for what
+  remains (a total gate, binding vectors, a gated real-wire environment, the 40 device cells, the
+  storage governor under genuine pressure, host adoption, publication), the three non-goals
+  including the no-chunk-temp-files commitment, and the open decisions.
+
 ## Reference
 
 - [Upload state machine](reference/state-machine.md) — states, transitions, events, and the

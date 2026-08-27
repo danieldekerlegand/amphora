@@ -120,6 +120,12 @@ cover, is in [Conformance vectors](docs/reference/conformance-vectors.md).
 The real-wire tusd v2 + S3 environment and opt-in Swift/Kotlin integration checks live in
 [`docs/guides/tusd-integration.md`](docs/guides/tusd-integration.md).
 
+**What is still unverified is the larger half.** All 40 cells of the device matrix read
+`NOT YET VERIFIED — physical device`, the CI gate is currently red, and the React Native control
+surface is bound to no native implementation. [`ROADMAP.md`](ROADMAP.md) states the measured
+position cell by cell, names the phases that remain, and records the non-goals — including the
+no-chunk-temp-files commitment — and the open decisions.
+
 ## Licence
 
 **MIT** — see [`LICENSE`](LICENSE).
