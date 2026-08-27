@@ -87,15 +87,39 @@ enum ConformanceVectors {
 }
 
 extension UploadPathTests {
+    /// The fixture's shape is asserted, never discovered.
+    ///
+    /// A test runner that discovers zero tests is a failure, not a pass, and the same holds for a
+    /// vector suite: a truncated or half-written `vectors.json` must go red rather than quietly
+    /// report a full run over a fraction of the rows. These numbers live in the test rather than
+    /// in the fixture, so a fixture rewritten by a generator cannot rewrite its own expectations
+    /// along with it. `ConformanceVectorsTest.kt` carries the identical three.
+    static let expectedSchemaVersion = 1
+    static let expectedVectorCount = 40
+
+    /// `Enqueue` is the one event that creates a job rather than reducing one, so it has no
+    /// `reduce` call to exercise and is counted instead of run. Asserting how many were skipped
+    /// closes the hole a bare `continue` leaves: without it, a fixture whose rows had all
+    /// degenerated to `Enqueue` would skip all forty, reduce nothing, and still pass.
+    static let expectedUnreducedCount = 1
+
     static func conformanceVectors() throws {
-        let (_, schemaVersion, vectors) = try ConformanceVectors.load()
-        precondition(schemaVersion == 1, "expected vectors schemaVersion 1, got \(schemaVersion)")
+        let (url, schemaVersion, vectors) = try ConformanceVectors.load()
+        precondition(schemaVersion == expectedSchemaVersion, "expected vectors schemaVersion \(expectedSchemaVersion), got \(schemaVersion)")
+        // Assert the count BEFORE reducing anything. A fixture truncated to eighteen rows should
+        // fail as "expected 40 vectors, got 18", not as whichever unrelated assertion those
+        // eighteen happen to trip over first.
+        precondition(vectors.count == expectedVectorCount, "expected \(expectedVectorCount) vectors in \(url.path), got \(vectors.count)")
+
+        var reduced = 0
+        var unreduced = 0
         for vector in vectors {
             let id = vector["id"] as! String
             let given = vector["given"] as! [String: Any]
             let event = vector["event"] as! [String: Any]
             let expect = vector["expect"] as! [String: Any]
-            if event["type"] as! String == "Enqueue" { continue }
+            if event["type"] as! String == "Enqueue" { unreduced += 1; continue }
+            reduced += 1
             let transition = UploadStateMachine.reduce(makeJob(given), makeEvent(event), now: Date(timeIntervalSince1970: 10))
             let expected = UploadState(rawValue: (expect["state"] as! String).camelcased())!
             precondition(transition.job.state == expected, "\(id): expected \(expected), got \(transition.job.state)")
@@ -105,7 +129,9 @@ extension UploadPathTests {
             if expect["terminateRemote"] as? Bool == true { precondition(transition.effects.contains { if case .terminateRemote = $0 { return true }; return false }, "\(id): terminate") }
             if (expect["requiredEffects"] as? [String])?.contains("HEAD_BEFORE_RESUME") == true { precondition(transition.effects.contains(.headBeforeResume), "\(id): HEAD") }
         }
-        precondition(vectors.count == 40, "expected 40 vectors, got \(vectors.count)")
+
+        precondition(unreduced == expectedUnreducedCount, "expected \(expectedUnreducedCount) non-reducing (Enqueue) vector, got \(unreduced) — a growing count means rows stopped being exercised")
+        precondition(reduced == expectedVectorCount - expectedUnreducedCount, "expected \(expectedVectorCount - expectedUnreducedCount) vectors put through UploadStateMachine.reduce, got \(reduced) — 'ran 0 vectors' is a failure, not a pass")
     }
 
     private static func makeJob(_ given: [String: Any]) -> UploadJob {

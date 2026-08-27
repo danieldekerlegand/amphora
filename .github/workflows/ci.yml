@@ -51,6 +51,17 @@ jobs:
       - name: Run Android conformance vectors
         run: ./gradlew --no-daemon :android:testDebugUnitTest
 
+  # The vectors only detect drift while both ports read the SAME bytes. A per-platform copy would
+  # leave both suites green while they describe two different state machines — the exact failure
+  # the fixture exists to prevent, and an invisible one. So the "one file" invariant is a gate
+  # rather than a comment. Cheap: it reads the git index, no toolchain, no build.
+  conformance-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: One vectors.json, read by both ports
+        run: Tests/Conformance/check-single-fixture.sh
+
   # A gate that cannot run reports success, which is worse than having no gate. `.chief/verify.sh`
   # deliberately reports SKIPPED as a third outcome and treats it as FATAL when CI=true — this job
   # is the counterfactual that proves it, running verify.sh with an emptied PATH and asserting the

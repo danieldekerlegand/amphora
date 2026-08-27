@@ -79,15 +79,53 @@ internal object ConformanceVectors {
 }
 
 class ConformanceVectorsTest {
+    private companion object {
+        /**
+         * The fixture's shape is asserted, never discovered.
+         *
+         * A test runner that discovers zero tests is a failure, not a pass, and the same holds
+         * for a vector suite: a truncated or half-written `vectors.json` must go red rather than
+         * quietly report a full run over a fraction of the rows. These three numbers are the
+         * independent witness — they live in the test, not in the fixture, so a fixture rewritten
+         * by a generator cannot rewrite its own expectations along with it. Adding a vector is
+         * meant to require touching both ports; that friction is the point.
+         */
+        const val EXPECTED_SCHEMA_VERSION = 1
+        const val EXPECTED_VECTOR_COUNT = 40
+
+        /**
+         * `Enqueue` is the one event that creates a job rather than reducing one, so it has no
+         * `reduce()` call to exercise and is counted instead of run. Asserting the count of these
+         * closes the hole that a bare `continue` leaves: without it, a fixture whose rows had all
+         * degenerated to `Enqueue` would skip all forty, reduce nothing, and still pass.
+         */
+        const val EXPECTED_UNREDUCED_COUNT = 1
+    }
+
     @Test
     fun sharedVectorsMatchAndroidPort() {
         val root = ConformanceVectors.load()
-        assertEquals(1, root.getInt("schemaVersion"), "vectors schemaVersion")
+        assertEquals(EXPECTED_SCHEMA_VERSION, root.getInt("schemaVersion"), "vectors schemaVersion")
         val entries = root.getJSONArray("vectors")
+        // Assert the count BEFORE reducing anything. A fixture truncated to eighteen rows should
+        // fail as "expected 40 vectors, got 18", not as whichever unrelated assertion those
+        // eighteen happen to trip over first.
+        assertEquals(
+            EXPECTED_VECTOR_COUNT,
+            entries.length(),
+            "vector count in ${ConformanceVectors.file()}",
+        )
+
+        var reduced = 0
+        var unreduced = 0
         for (index in 0 until entries.length()) {
             val vector = entries.getJSONObject(index)
             val eventJson = vector.getJSONObject("event")
-            if (eventJson.getString("type") == "Enqueue") continue
+            if (eventJson.getString("type") == "Enqueue") {
+                unreduced++
+                continue
+            }
+            reduced++
             val transition = UploadStateMachine.reduce(job(vector.getJSONObject("given")), event(eventJson), 10L)
             val expect = vector.getJSONObject("expect")
             val id = vector.getString("id")
@@ -98,7 +136,17 @@ class ConformanceVectorsTest {
             if (expect.optBoolean("terminateRemote")) assertTrue(transition.effects.any { it is Effect.TerminateRemote }, id)
             if (expect.optJSONArray("requiredEffects")?.toString()?.contains("HEAD_BEFORE_RESUME") == true) assertTrue(transition.effects.contains(Effect.HeadBeforeResume), id)
         }
-        assertEquals(40, entries.length())
+
+        assertEquals(
+            EXPECTED_UNREDUCED_COUNT,
+            unreduced,
+            "vectors skipped as non-reducing (Enqueue) — a growing count means rows stopped being exercised",
+        )
+        assertEquals(
+            EXPECTED_VECTOR_COUNT - EXPECTED_UNREDUCED_COUNT,
+            reduced,
+            "vectors actually put through UploadStateMachine.reduce — 'ran 0 vectors' is a failure, not a pass",
+        )
     }
 
     private fun job(given: JSONObject): UploadJob = UploadJob(

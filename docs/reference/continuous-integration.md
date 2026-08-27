@@ -61,6 +61,56 @@ gh run view <run-id>
 A run's **conclusion** is the claim. "CI is wired" is not evidence; a run id and its conclusion
 are. Related: [Environmental claim evidence](environment-evidence.md).
 
+## The conformance vectors run on both ports
+
+`Tests/Conformance/vectors.json` (40 vectors, `schemaVersion` 1) exists for exactly one reason: to
+stop the Swift and Kotlin state machines drifting apart. A vector suite that runs on one platform
+cannot do that — it provides assurance without verification, which is worse than an acknowledged
+gap. Both ports therefore run in CI, against that one file:
+
+| Job | Step | What runs the vectors |
+|---|---|---|
+| `ios` | `swift run --package-path ios AmphoraPathTests` | `UploadPathTests.conformanceVectors()` |
+| `android` | `./gradlew --no-daemon :android:testDebugUnitTest` | `ConformanceVectorsTest.sharedVectorsMatchAndroidPort` |
+| `conformance-fixture` | `Tests/Conformance/check-single-fixture.sh` | Nothing — it gates the *one file* invariant |
+
+Neither port reaches the fixture by a working-directory-relative path. Swift walks up from
+`#filePath`; Kotlin uses the `amphora.repoRoot` system property `android/build.gradle.kts` injects,
+falling back to walking up from `user.dir`. A fixture the runner cannot find used to crash with
+`NSCocoaErrorDomain 260`, which reads as a broken machine rather than as a red test; both ports now
+fail with the list of paths they searched.
+
+### Ran-zero-vectors is a failure
+
+`BUILD SUCCESSFUL` on a task that executed nothing looks exactly like one that executed forty, so
+neither port is allowed to discover its own scope. Each asserts, independently of the fixture:
+
+- `schemaVersion == 1`;
+- exactly **40** vectors, checked *before* the first reduction, so a truncated file fails as
+  "expected 40 vectors, got 18" rather than as whichever unrelated assertion those 18 trip over;
+- exactly **1** non-reducing vector (`row-01-enqueue` — `Enqueue` creates a job rather than
+  reducing one) and therefore exactly **39** rows actually put through `reduce`. Without this last
+  pair a fixture whose rows had all degenerated to `Enqueue` would skip all forty, exercise
+  nothing, and still report green.
+
+Those three numbers live in the tests, not in the fixture, so a fixture rewritten by a generator
+cannot rewrite its own expectations alongside it. Adding a vector means touching both ports; that
+friction is the point.
+
+### One file, no per-platform copy
+
+The whole mechanism depends on both ports reading the same bytes. A second copy — a snapshot under
+`android/src/test/resources/`, a renamed `conformance-snapshot.json` beside the Swift target —
+keeps both suites green while they describe two different state machines, which is precisely the
+drift the fixture was written to catch, made invisible.
+
+`Tests/Conformance/check-single-fixture.sh` is that invariant as a gate rather than a comment. It
+reads the git index (no toolchain, no build) and fails on three things: a second tracked file named
+`vectors.json`; any other tracked `*.json` containing the vector id `row-01-enqueue`, which catches
+a copy that was renamed on the way in; and either port no longer naming
+`Tests/Conformance/vectors.json`, which catches a port quietly repointed at its own fixture without
+deleting anything.
+
 ## A skipped check is not a passing check
 
 `.chief/verify.sh` reports **three** outcomes, not two:
