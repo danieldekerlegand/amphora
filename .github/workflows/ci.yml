@@ -1,8 +1,23 @@
 name: CI
 
+# TRIGGER — deliberate, do not "tidy" this back to `pull_request` alone.
+#
+# Work does not arrive here through pull requests. Chief merges a finished tasklist
+# branch into `main` LOCALLY (`--no-ff`) and then pushes `main`; no PR is ever opened.
+# A `pull_request`-only trigger would therefore never fire even once — that is exactly
+# how the sibling repository `vita` ended up with a workflow that had never run.
+#
+# `push` on the default branch is the trigger that matches how commits actually land.
+# `chief/**` is included so a tasklist branch is built BEFORE it is merged rather than
+# only after. `pull_request` is retained for humans who do open one, and
+# `workflow_dispatch` so a run can be forced without inventing a commit.
 on:
   push:
+    branches:
+      - main
+      - 'chief/**'
   pull_request:
+  workflow_dispatch:
 
 jobs:
   ios:
