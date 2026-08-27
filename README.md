@@ -65,11 +65,19 @@ docs/guides/             host-app integration
 android/                 Kotlin: state machine, Room registry, governors, WorkManager slices
 ios/Sources/Amphora/     Swift: state machine port, background session, two transports, governors
 packages/react-native/   TurboModule spec and JS control surface
+Tests/Conformance/       vectors.json — ONE file, read by both ports — plus the drift control
+integration/tusd/        the real-wire harness: tusd v2 + MinIO via Docker Compose
 ```
+
+Working in this repository: [`CLAUDE.md`](CLAUDE.md) covers what a session needs and cannot derive
+from the tree — the no-chunk-temp-files commitment, why a `SKIPPED` check is not a passing one, why
+`swift test` reports "no tests found" while the suite is fine, and the adopt-the-protocol boundary.
+What has changed and when is in [`CHANGELOG.md`](CHANGELOG.md); nothing is released yet.
 
 ## Status
 
-Specification plus Android, iOS, and RN skeletons — and, as of **2026-08-27, bytes move.**
+Specification, both platform ports, and the RN control surface — and, as of
+**2026-08-27, bytes move.**
 
 Both ports have completed a real upload against a real tusd v2 + S3 server, each across a real
 interruption rather than a simulated one:
@@ -108,8 +116,19 @@ Implemented: both state-machine ports, both engines, both reconcilers, the wire 
 dialects (create / head / append / terminate), the governors' policy logic, the iOS
 background-session delegate and task re-identification, and the RN control surface.
 
-Stubbed: `UploadStore`'s SQLite backing (iOS), `PHAsset` export and remainder writing (iOS),
-seekable `content://` opening and provider staging (Android).
+**Nothing in this repository is stubbed.** The three that were — `UploadStore`'s SQLite backing and
+`PHAsset` export plus remainder writing on iOS, seekable `content://` opening plus provider staging
+on Android — were closed by tasklists `60` and `70` and are real code:
+[`Store/SQLiteUploadStore.swift`](ios/Sources/Amphora/Store/SQLiteUploadStore.swift),
+[`Governor/StorageGovernor.swift`](ios/Sources/Amphora/Governor/StorageGovernor.swift) (`writeRemainder`,
+`exportPhotosAsset`), and both ports' `SourceResolver` with the Android
+[`store/`](android/src/main/kotlin/dev/amphora/store) package behind it.
+
+What is missing is an absence rather than a stub: `packages/react-native` declares the codegen spec
+`AmphoraSpec`, and nothing on either native side implements it — no `RCTBridgeModule`, no
+`ReactContextBaseJavaModule`, no podspec, no Gradle module for the package. The control surface
+typechecks, builds, and is wired to no bytes. That is
+[roadmap phase 6](ROADMAP.md#phase-6--host-adoption-via-the-react-native-turbomodule).
 
 **The conformance vectors exist and both ports run them.** `Tests/Conformance/vectors.json` is one
 file — 40 transition rows plus 3 transport rows — read by Swift and Kotlin alike, and both suites

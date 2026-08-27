@@ -196,8 +196,9 @@ Deliberately last, and gated on the phases above rather than on effort. Publishi
 claim in the README into a claim someone else may rely on.
 
 Preconditions, in order: phase 1 (a total gate), a resolved name (see open decisions — the current
-one is explicitly a placeholder), the two outstanding ADRs recorded, a `CHANGELOG.md` with a real
-first entry, and at least rows 1–4 of phase 4 closed, because publishing a *background* uploader
+one is explicitly a placeholder), the two outstanding ADRs recorded, [`CHANGELOG.md`](CHANGELOG.md)
+carrying a real release entry rather than only its `[Unreleased]` section (the file itself now
+exists), and at least rows 1–4 of phase 4 closed, because publishing a *background* uploader
 whose background behaviour has never run on hardware would repeat tasklist `80`'s mistake at
 registry scale.
 
@@ -325,6 +326,10 @@ evidence chain.
 ## Related
 
 - [Documentation index](docs/README.md) — every document in this repository.
+- [Working in this repository](CLAUDE.md) — what a session here needs and cannot derive from the
+  tree: the boundary, the no-chunk-temp-files commitment, and the two ways verification can be
+  misread.
+- [Changelog](CHANGELOG.md) — what changed and when, and why every entry is still `[Unreleased]`.
 - [Environment verification matrix](docs/reference/environment-matrix.md) — the 40 device cells.
 - [Environmental claim evidence](docs/reference/environment-evidence.md) — what automated evidence
   exists per environmental claim, and what it explicitly does not cover.

@@ -11,6 +11,12 @@ documentation still greps as current.
   remains (a total gate, binding vectors, a gated real-wire environment, the 40 device cells, the
   storage governor under genuine pressure, host adoption, publication), the three non-goals
   including the no-chunk-temp-files commitment, and the open decisions.
+- [Changelog](../CHANGELOG.md) — what changed and when, under `[Unreleased]` because nothing is
+  released yet. Entries dated before 2026-08-27 were reconstructed from git history and the tasklist
+  records, and are marked as such; one of them records a correction rather than the original claim.
+- [Working in this repository](../CLAUDE.md) — orientation for a session, covering what the tree does
+  not state: the adopt-the-protocol boundary, the no-chunk-temp-files commitment, why a `SKIPPED`
+  check is never a passing one, and why `swift test` reports "no tests found" while the suite passes.
 
 ## Reference
 
