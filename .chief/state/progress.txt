@@ -52,3 +52,70 @@ OBSERVED
 - Run negative controls with ABSOLUTE paths. The Bash tool's working directory persists across
   calls, so a `cd ios` in an earlier call silently made a later `swift run --package-path ios`
   resolve to `ios/ios`.
+
+## US-2 — Kotlin executes the same 40 vectors, in CI (2026-08-26)
+
+WHAT: The android CI job already invoked `:android:testDebugUnitTest`, so the Kotlin vector test
+was reachable; what it could NOT do was tell "ran 40 vectors" from "ran none". Both ports skip the
+one non-reducing row (`row-01-enqueue` — `Enqueue` creates a job rather than reducing one) with a
+bare `continue`, so a fixture whose rows had all degenerated to `Enqueue` would skip all forty,
+exercise nothing, and still report green. Same class of failure as a test runner that discovers
+zero tests and calls it a pass. Also made "one file, no per-platform copy" a gate instead of a
+comment.
+
+FILES CHANGED
+- android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt — companion object holds
+  EXPECTED_SCHEMA_VERSION/EXPECTED_VECTOR_COUNT/EXPECTED_UNREDUCED_COUNT. Count asserted BEFORE the
+  loop; `reduced` and `unreduced` counted inside it and asserted after.
+- ios/Tests/AmphoraTests/ConformanceTests.swift — the identical three constants and the identical
+  two post-loop assertions, as preconditions (the convention in this target).
+- Tests/Conformance/check-single-fixture.sh — NEW. Reads the git index, no toolchain. Fails on (1)
+  a second tracked file whose BASENAME is vectors.json, (2) any other tracked *.json containing the
+  vector id `row-01-enqueue` — catches a copy renamed on the way in, (3) either port no longer
+  naming `Tests/Conformance/vectors.json` — catches a port repointed at its own fixture without
+  deleting anything.
+- .github/workflows/ci.yml — new `conformance-fixture` job running that script.
+- docs/reference/continuous-integration.md — new section: which job runs the vectors on each port,
+  why ran-zero-vectors is a failure, and what the one-file gate checks.
+
+OBSERVED (CI run 33040844045, branch chief/110-vectors-run-on-both-ports)
+- android (job 98413854669): `ConformanceVectorsTest > sharedVectorsMatchAndroidPort PASSED`,
+  StorageGovernorTest PASSED, TusdIntegrationTest SKIPPED, BUILD SUCCESSFUL in 28s.
+- conformance-fixture (job 98413854465): `check-single-fixture: one fixture at
+  Tests/Conformance/vectors.json, referenced by both ports`, 5s, green.
+- verify-policy green, react-native green.
+- ios RED. NOT caused by this commit — the same three errors as run 33040087311 on the previous
+  branch: NetworkGovernor.swift:23 `reference to captured var 'self' in concurrently-executing
+  code`, and non-Sendable `BackgroundSessionManager` stored in NativeResumableTransport.swift:16
+  and TUSKitTransport.swift:27. Already recorded in
+  docs/reference/continuous-integration.md#known-divergence as owned by nobody. Left alone
+  deliberately: two of the three are a real Sendable redesign, not a one-liner, and rewriting
+  production transport code inside a story about test wiring is the wrong trade.
+- Local negative controls, all restored afterwards (`git status` clean):
+  fixture truncated to 18 rows -> `Precondition failed: expected 40 vectors in .../vectors.json,
+  got 18`; every row's event rewritten to Enqueue -> `expected 1 non-reducing (Enqueue) vector, got
+  40`; per-platform copy -> exit 1; copy renamed to ios/conformance-snapshot.json -> exit 1 on the
+  sentinel; Kotlin port repointed at vectors-android.json -> exit 1.
+- Local: `swift build --package-path ios -Xswiftc -warnings-as-errors` Build complete;
+  `swift run AmphoraPathTests` 44 passed from the repo root AND from ios/; `.chief/verify.sh`
+  3 passed, 0 failed, 1 SKIPPED (Gradle — no JDK).
+
+## Learnings for future iterations
+
+- THE ANDROID JOB IS GREEN AND THE KOTLIN VECTOR TEST RUNS. First execution was run 33040087311
+  (previous branch, old working-directory wiring); run 33040844045 is the first under US-1's
+  anchored loader plus the new count assertions. Do not describe the Kotlin port as un-run.
+- The ios job is the one that is red, on three pre-existing Swift-concurrency errors that LOCAL
+  Swift 6.2.3 does not surface at all — `swift build -Xswiftc -warnings-as-errors` passes here and
+  fails on the runner. A green local verify does not predict a green run; check `gh run list`.
+- `git ls-files -- '*vectors.json'` is a SUFFIX glob, not a basename match: it matched
+  `tasks/chief/completed/50-conformance-vectors.json` and produced a false failure on the first
+  try. Filter on `basename` instead.
+- Content sentinels beat filename matching for "is there a second copy of this fixture" checks —
+  grepping tracked `*.json` for one vector id catches a copy that was renamed on the way in.
+- Push the branch to get a real verdict. CI fires on `chief/**`, the run takes ~3 minutes, and
+  `gh run view <id> --log --job <job-id>` is how you read what a test actually printed rather than
+  what it was expected to print.
+- STILL OUTSTANDING FOR US-3: the Kotlin assertions added here have never been driven RED. Their
+  Swift twins have (both controls above). US-3's negative control must exercise the Kotlin side
+  specifically, in CI, since no JDK exists on this machine.
