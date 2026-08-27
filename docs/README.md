@@ -34,6 +34,9 @@ documentation still greps as current.
   public-visibility decision and its billing reason, and why the workflow triggers on `push`
   rather than `pull_request`. Also the three-outcome verify policy: why a SKIPPED check is
   tolerated on a developer machine and fatal in CI, and never reads as a pass in either.
+- [The verification record](reference/verification-record.md) — the rule that a story may not be
+  marked passing on work its own notes record as not having run, what breaking it cost this
+  repository at tasklist `80`, and what an evidence-bearing note has to contain.
 
 ## Guides
 
