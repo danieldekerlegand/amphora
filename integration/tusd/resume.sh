@@ -4,6 +4,10 @@ set -euo pipefail
 # Proves resumability across a killed client process. The second client uses HEAD as its only
 # offset source, then MinIO is read directly to verify that tusd persisted the exact source bytes.
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=integration/tusd/lib.sh
+source "$root/integration/tusd/lib.sh"
+amphora_require_docker
+amphora_require_commands curl python3 shasum
 compose=(docker compose -f "$root/integration/tusd/docker-compose.yml")
 endpoint=${TUSD_ENDPOINT:-http://127.0.0.1:8080/files/}
 work=$(mktemp -d)
@@ -47,7 +51,7 @@ wait "$patch_pid" 2>/dev/null || true
 
 head_headers="$work/resume.headers"
 curl --silent --show-error --fail-with-body -D "$head_headers" -o /dev/null \
-  -X HEAD "$upload_url" -H 'Tus-Resumable: 1.0.0'
+  --head "$upload_url" -H 'Tus-Resumable: 1.0.0'
 offset=$(awk 'BEGIN { IGNORECASE=1 } /^Upload-Offset:/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit }' "$head_headers")
 [[ "$offset" =~ ^[0-9]+$ && "$offset" -gt 0 && "$offset" -lt "$size" ]] || {
   echo "killed process did not leave a resumable offset: $offset" >&2; exit 1;
@@ -59,7 +63,7 @@ tail -c "$tail_bytes" "$source" | curl --silent --show-error --fail-with-body -X
   -H 'Tus-Resumable: 1.0.0' -H 'Content-Type: application/offset+octet-stream' \
   -H "Upload-Offset: $offset" --data-binary @- >/dev/null
 final=$(curl --silent --show-error --fail-with-body -D - -o /dev/null \
-  -X HEAD "$upload_url" -H 'Tus-Resumable: 1.0.0' | awk 'BEGIN { IGNORECASE=1 } /^Upload-Offset:/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit }')
+  --head "$upload_url" -H 'Tus-Resumable: 1.0.0' | awk 'BEGIN { IGNORECASE=1 } /^Upload-Offset:/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit }')
 [[ "$final" == "$size" ]] || { echo "resume ended at offset $final, expected $size" >&2; exit 1; }
 
 # tusd's S3 backend stores the upload under its configured object prefix. Read it through MinIO's

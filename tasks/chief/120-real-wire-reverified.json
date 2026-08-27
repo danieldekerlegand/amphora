@@ -2,7 +2,7 @@
   "project": "amphora",
   "category": "fix",
   "branchName": "chief/120-real-wire-reverified",
-  "description": "**A story titled \"Both platforms complete an upload against a real tusd instance\" is recorded `passes: true`, and its own notes admit it never reached one.** Tasklist `80`, merged at `c201ddf`, carries: *\"Live Docker run was attempted but the local Docker daemon was unavailable\"* and *\"Android Gradle was unavailable locally.\"*\n\nThat record is the worst artifact in this repository. It will be cited later as evidence that bytes have moved, and they have not. Nothing here has ever crossed a real wire.\n\n**The real-wire test is also broken independently.** `integration/tusd/run.sh` exits 1 against a live Docker: the pinned `minio/mc:RELEASE.2024-06-13T19-44-55Z` image no longer resolves on Docker Hub (`docker manifest inspect` returns GONE). The pin that was supposed to guarantee reproducibility has rotted, which is its own lesson about pinning to a registry tag that can be withdrawn.\n\n**This tasklist is about the RECORD as much as the code.** Correcting a `passes` flag after the fact is uncomfortable and is exactly what integrity requires here — the alternative is a repository whose central claim is documented as proven when it is not. The portfolio rule this follows: 'could not run' and 'ran and passed' are different claims, and a log that conflates them is how three tasklists merged as `auto-verified` against a gate that could not fail.",
+  "description": "**A story titled \"Both platforms complete an upload against a real tusd instance\" is recorded `passes: true`, and its own notes admit it never reached one.** Tasklist `80`, merged at `c201ddf`, carries: *\"Live Docker run was attempted but the local Docker daemon was unavailable\"* and *\"Android Gradle was unavailable locally.\"*\n\nThat record is the worst artifact in this repository. It will be cited later as evidence that bytes have moved, and they have not. Nothing here has ever crossed a real wire.\n\n**The real-wire test is also broken independently.** `integration/tusd/run.sh` exits 1 against a live Docker: the pinned `minio/mc:RELEASE.2024-06-13T19-44-55Z` image no longer resolves on Docker Hub (`docker manifest inspect` returns GONE). The pin that was supposed to guarantee reproducibility has rotted, which is its own lesson about pinning to a registry tag that can be withdrawn.\n\n**This tasklist is about the RECORD as much as the code.** Correcting a `passes` flag after the fact is uncomfortable and is exactly what integrity requires here \u2014 the alternative is a repository whose central claim is documented as proven when it is not. The portfolio rule this follows: 'could not run' and 'ran and passed' are different claims, and a log that conflates them is how three tasklists merged as `auto-verified` against a gate that could not fail.",
   "dependsOn": [
     "100-android-into-ci"
   ],
@@ -25,17 +25,17 @@
       "title": "The rotted pin is repaired and the harness runs again",
       "acceptanceCriteria": [
         "`integration/tusd/run.sh` exits 0 against a live Docker daemon. Today it exits 1 because a pinned image tag was withdrawn from Docker Hub.",
-        "Replacement pins are chosen so this failure is less likely to recur — a digest rather than a mutable tag where the registry supports it — and the reasoning is recorded beside the pin.",
+        "Replacement pins are chosen so this failure is less likely to recur \u2014 a digest rather than a mutable tag where the registry supports it \u2014 and the reasoning is recorded beside the pin.",
         "The harness distinguishes 'Docker unavailable on this machine' from 'the run failed'. The first is an honest skip, the second is red, and conflating them is what produced `80`'s false record."
       ],
-      "passes": false,
-      "notes": null
+      "passes": true,
+      "notes": "integration/tusd/run.sh exits 0 against a live Docker daemon (server 29.3.1): \"tusd v2 + S3 integration: 3 MiB create/head/patch/terminate passed; version mismatch rejected\". Two independent defects were fixed to get there. (1) The withdrawn pins: minio/minio AND minio/mc at RELEASE.2024-06-13T19-44-55Z both answer 'no such manifest' on Docker Hub (MinIO prunes old RELEASE.* tags; 1181 tags remain, none older than 2025). Both are now digest pins with the release in a comment beside them, and the separate minio/mc pin is deleted outright since mc ships at /usr/bin/mc inside the minio image - one fewer tag that can rot. (2) Once the stack came up the script still exited 18: `curl -X HEAD` waits for a body HEAD never sends ('transfer closed with 3145728 bytes remaining to read'), so all six occurrences became `curl --head`. That bug proves the script had never been executed. Three-valued exit contract added in integration/tusd/lib.sh and observed on all four paths: live daemon -> 0; DOCKER_HOST=unix:///nonexistent.sock -> 77 'SKIP ... proved nothing'; docker off PATH -> 77; AMPHORA_REQUIRE_DOCKER=1 with no daemon -> 1. bash -n clean on all three scripts (shellcheck not installed on this machine)."
     },
     {
       "id": "US-2",
       "title": "Bytes actually cross a wire, on both platforms, and it is recorded",
       "acceptanceCriteria": [
-        "A real upload completes against a real tusd instance from the Swift port, with the run's output recorded — including a resume across an interruption, since resumability is the entire product thesis and an upload that never resumed proves the easy half.",
+        "A real upload completes against a real tusd instance from the Swift port, with the run's output recorded \u2014 including a resume across an interruption, since resumability is the entire product thesis and an upload that never resumed proves the easy half.",
         "The same from the Kotlin port. This depends on `100`; if the Android toolchain still cannot run it, this criterion is reported UNVERIFIABLE HERE and is NOT marked passing.",
         "The storage claim is observed rather than asserted: peak extra disk during a transfer stays near zero, consistent with 'no chunk temp files'. A measurement, not a code reading."
       ],
@@ -46,9 +46,9 @@
       "id": "US-3",
       "title": "Tasklist 80's record is corrected to what happened",
       "acceptanceCriteria": [
-        "`tasks/chief/completed/80-*.json` has its `passes` flags corrected to reflect that the live run did not occur, with a note pointing at this tasklist as the place it was actually done. Do not delete the original notes — they are the evidence, and they were honest even though the flag was not.",
+        "`tasks/chief/completed/80-*.json` has its `passes` flags corrected to reflect that the live run did not occur, with a note pointing at this tasklist as the place it was actually done. Do not delete the original notes \u2014 they are the evidence, and they were honest even though the flag was not.",
         "If this tasklist's own runs succeed, the correction records both: what `80` actually did (built the path) and what it did not (exercise it), and where the real verification landed.",
-        "README.md is brought in line. It currently still says 'Nothing moves bytes yet' and 'No conformance vectors yet' — the second is already false, and the first should become false through this tasklist rather than through an edit.",
+        "README.md is brought in line. It currently still says 'Nothing moves bytes yet' and 'No conformance vectors yet' \u2014 the second is already false, and the first should become false through this tasklist rather than through an edit.",
         "State the general rule in `docs/` so it outlives this fix: a story may not be marked passing on the strength of work that its own notes record as not having run."
       ],
       "passes": false,

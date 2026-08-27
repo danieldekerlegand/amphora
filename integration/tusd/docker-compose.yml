@@ -1,16 +1,32 @@
+# Every image is pinned by digest, not by tag.
+#
+# This file used to pin minio/minio and minio/mc to RELEASE.2024-06-13T19-44-55Z. Both tags were
+# later withdrawn from Docker Hub — `docker manifest inspect` answers "no such manifest" — and the
+# harness failed at `compose up` on every machine, which is how a pin meant to guarantee
+# reproducibility became the thing that broke it. A `RELEASE.*` tag is mutable inventory: MinIO
+# prunes old ones. A digest is content-addressed, so it can never be repointed at different bytes,
+# and a tag rename cannot strand it. (A digest is not immortal — a repository can still delete the
+# manifest — but it removes the far more common failure of the tag simply moving or being retired.)
+#
+# When bumping: pull the tag, read `docker image inspect --format '{{index .RepoDigests 0}}'`, and
+# record the human-readable release beside the digest so the pin stays auditable.
 services:
   minio:
-    image: minio/minio:RELEASE.2024-06-13T19-44-55Z
-    command: server /data --console-address :9001
+    # minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # No --console-address: the community image dropped the admin console, and this harness never
+    # used it. One less flag and one less published port to collide with.
+    command: server /data
     environment:
       MINIO_ROOT_USER: amphora
       MINIO_ROOT_PASSWORD: amphora-secret
     ports:
       - "9000:9000"
-      - "9001:9001"
 
   create-bucket:
-    image: minio/mc:RELEASE.2024-06-13T19-44-55Z
+    # Reuses the minio image on purpose. `mc` ships inside it at /usr/bin/mc, so the separate
+    # minio/mc pin bought nothing but a second tag that could rot independently — and did.
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     depends_on:
       - minio
     entrypoint: ["/bin/sh", "-c"]
@@ -19,7 +35,8 @@ services:
       mc mb --ignore-existing local/amphora-uploads"
 
   tusd:
-    image: tusproject/tusd:v2.4.0
+    # tusproject/tusd:v2.4.0
+    image: tusproject/tusd@sha256:6c5e17dcb9441d773b7547a5b0eaa356ea77b6a4b6b35ce5cb25660b9a164e58
     depends_on:
       create-bucket:
         condition: service_completed_successfully

@@ -4,6 +4,10 @@ set -euo pipefail
 # Run the real-wire smoke test. The compose file deliberately pins every image so a
 # future tusd or MinIO upgrade cannot silently change the protocol under test.
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=integration/tusd/lib.sh
+source "$root/integration/tusd/lib.sh"
+amphora_require_docker
+amphora_require_commands curl python3 shasum
 compose=(docker compose -f "$root/integration/tusd/docker-compose.yml")
 endpoint=${TUSD_ENDPOINT:-http://127.0.0.1:8080/files/}
 work=$(mktemp -d)
@@ -39,7 +43,7 @@ esac
 
 head_headers="$work/head.headers"
 curl --silent --show-error --fail-with-body -D "$head_headers" -o /dev/null \
-  -X HEAD "$upload_url" -H 'Tus-Resumable: 1.0.0'
+  --head "$upload_url" -H 'Tus-Resumable: 1.0.0'
 grep -Eiq '^Upload-Offset:[[:space:]]*0' "$head_headers"
 
 patch_headers="$work/patch.headers"
@@ -63,7 +67,7 @@ fi
 curl --silent --show-error --fail-with-body -o /dev/null \
   -X DELETE "$upload_url" -H 'Tus-Resumable: 1.0.0' -H 'Content-Length: 0'
 status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  -X HEAD "$upload_url" -H 'Tus-Resumable: 1.0.0')
+  --head "$upload_url" -H 'Tus-Resumable: 1.0.0')
 [[ "$status" == 404 || "$status" == 410 ]] || {
   echo "terminated upload still exists (HEAD returned $status)" >&2
   exit 1
