@@ -15,6 +15,26 @@ Started: Thu Aug 27 00:33:59 CDT 2026
   comment on the line above so the pin stays auditable.
 - **`mc` is already inside `minio/minio` at `/usr/bin/mc`.** There is no reason to pin `minio/mc`
   separately — it is a second tag that can rot for no benefit.
+- **A "fresh client in the same process" is not process death.** Both ports shipped harnesses that
+  claimed to simulate relaunch by allocating a second transport object. That shows an object with
+  no cached offset; it shares the heap, the descriptors and the address space of the first one.
+  Real evidence is `kill(getpid(), SIGKILL)` and a second OS process (Swift), or aborting the
+  request body mid-flight so the socket dies with `Content-Length` outstanding (Kotlin). Assert on
+  the observed exit status 137 — a signal death and an `exit(1)` must never be confusable.
+- **tusd's S3 upload id is `<object-key>+<s3-multipart-upload-id>`.** Only the part before the `+`
+  names the object. And `mc`'s alias lives in the container's `~/.mc`, so it must be created in the
+  same `sh -c` that reads — the one the `create-bucket` service made is in a different container.
+  Both bugs sat in `resume.sh` until it was first actually executed.
+- **Size a partial upload above 5 MiB before claiming a resume crossed a durability boundary.**
+  That is the S3 multipart minimum part size. Below it tusd is handing back a number it still has
+  in memory, which is a weaker claim than it looks.
+- **Storage claims get sampled, never read off the source.** Redirect the temp directory into a
+  tree you control (`TMPDIR` for a shell driver, `java.io.tmpdir` via `android/build.gradle.kts`
+  for the JVM), take a baseline with the source already in place, poll during the transfer, and
+  fail on a budget. Observed: 4 KiB (Swift) and 0 KiB (Kotlin) extra for an 8 MiB upload.
+- **CI is the only place the Kotlin port can be exercised at all.** No JDK and no Android SDK exist
+  on these machines; `ubuntu-latest` has both plus Docker. GitHub's `macos-*` runners have no
+  Docker daemon, so the mirror is also true: the Swift real-wire harness can only run locally.
 - **The harness exit-code contract is three-valued and load-bearing.** `integration/tusd/lib.sh`:
   0 = ran and passed, 1 = ran and failed, 77 = did not run (no Docker), and
   `AMPHORA_REQUIRE_DOCKER=1` turns 77 into 1. Source it from any new integration script. Never
@@ -69,3 +89,136 @@ installed on this machine — noted rather than claimed.
 - A full `up`→`down -v` cycle costs ~35–60s. Budget for it; don't assume a fast edit-test loop.
 - Docker **is** available on this machine. Any future note claiming otherwise should be
   disbelieved and re-checked.
+
+
+---
+
+## US-2 — Bytes actually cross a wire, on both platforms, and it is recorded (passes: true)
+
+Both criteria are observed. Neither is UNVERIFIABLE. This is the first time either port has been
+put on a socket.
+
+**Swift — `integration/tusd/swift-wire.sh`, exit 0**, local, Docker server 29.3.1:
+
+```
+created http://127.0.0.1:8080/files/79d474eb3c5a8ace4997afd7a041003a+ODlhZDI3Nzct...
+sent 5505024 bytes, tusd acked offset 5505024; now killing pid 6691 with SIGKILL
+swift-wire.sh: line 94: 6691 Killed: 9   "$binary" send-prefix ...
+sender died: exit status 137 (SIGKILL)
+resumed from server offset 5505024 and completed at 8388608 of 8388608
+bytes at rest in MinIO match the source: sha256 bdf23837181f5808331800c1ae2b4f7d7a839536b10d58491471c50dde23833a
+unpinned Tus-Resumable rejected with HTTP 412
+terminated; HEAD now returns HTTP 404
+peak extra disk during transfer: 4 KiB (baseline 8192 KiB, peak 8196 KiB) for a 8192 KiB upload
+```
+
+The prefix is 5.25 MiB deliberately — over the 5 MiB S3 multipart minimum — so tusd had flushed a
+real part into MinIO before process A disappeared. Process B is a genuinely separate OS process
+whose entire inheritance is the upload URL on `argv`.
+
+**Kotlin — CI run 33044191974** (head `89583f9`), job `android`: **success**.
+
+```
+TusdIntegrationTest > completesAcrossAnAbortedRequestAndStagesNothingOnDisk PASSED
+Kotlin real wire: 8 MiB uploaded across an aborted PATCH, resumed by a new client
+from server offset 6553600, checksum verified, peak extra disk 0 KiB
+```
+
+6553600 = the 5505024-byte prefix plus exactly four 256 KiB buffers, which is where the injected
+clock fires the deadline. The interruption is the *production* `SliceDeadlineReached` path — the
+one Android 15's FGS budget triggers — aborting the body with a full `Content-Length` outstanding.
+Reproduced identically on the earlier run 33043910981.
+
+Files: `ios/Tests/AmphoraTusdIntegration/main.swift` (rewritten as a phase CLI),
+`integration/tusd/swift-wire.sh` (new), `integration/tusd/resume.sh` (two real bugs fixed),
+`android/src/test/kotlin/dev/amphora/TusdIntegrationTest.kt`, `android/build.gradle.kts`,
+`.github/workflows/ci.yml`, `docs/guides/tusd-integration.md`.
+
+### Learnings for future iterations
+
+- **`resume.sh` is now green** and the prior iteration's two warnings were both right to raise and
+  both wrong about the cause. The `mc alias` worry was correct. The offset worry was not: tusd's S3
+  store buffers to a local temp file and reports the *buffered* offset, so a 2-second throttled
+  PATCH left offset 196608 on a 3 MiB source, well above zero. The actual bug was the object key —
+  see the patterns section.
+- **The `ios` CI job is still red and it is not this story's doing.** `NetworkGovernor.swift:23`
+  and `TUSKitTransport.swift:27` fail under `-Xswiftc -warnings-as-errors` on the macos-14 runner's
+  toolchain; Swift 6.2.3 locally does not emit them at all, so a green local build does not predict
+  a green `ios` job. Already recorded as an unowned Known divergence in
+  `docs/reference/continuous-integration.md`, and `main` fails identically (run 33038523997).
+  **Someone should own it** — it is the last thing standing between this branch and a green CI.
+- **`testLogging.showStandardStreams` is off**, so a `println` from a test is invisible in the CI
+  log. Write the evidence line to a file (`android/build/reports/tusd-real-wire.txt`) and `cat` it
+  in a step — do not depend on whether Gradle's JUnit XML happens to carry suite-level stdout.
+- **Strictness is keyed on `AMPHORA_REQUIRE_DOCKER=1`, deliberately not on `CI=true`.** The
+  `android` job legitimately runs the whole unit suite with no server up, and a skip there is
+  honest. Strictness belongs to the step whose purpose is the evidence.
+- This tasklist has no research map (`.chief/state/research/` does not exist and no `# Research`
+  section was appended to the prompt). The US-1 notes in this file were the map, and they held up.
+
+
+---
+
+## US-3 — Tasklist 80's record is corrected to what happened (passes: true)
+
+The uncomfortable half of this tasklist. `80`'s two stories are now `passes: false`.
+
+**`tasks/chief/completed/80-integration-against-tusd.json`.** US-1 ("Both platforms complete an
+upload against a real tusd instance") and US-2 ("Resume works across an interruption") both carried
+`passes: true` beside their own admissions — *"the local Docker daemon was unavailable"*, *"Android
+Gradle was unavailable locally"*. Both flags flipped to `false`. **The original `notes` are
+untouched, byte for byte** — they were honest and they are the evidence; only the flags were wrong.
+Beside each, a new `correction` string records the three things the criterion asked for:
+
+- what `80` **did** build — the pinned Compose environment, the harness scripts, create / head /
+  append / terminate in both dialects, the typed unexpected-offset error. All still in the tree.
+- what it **did not** do — exercise any of it. Plus two things only discovered by running it: its
+  MinIO pins had been withdrawn, so `compose up` could not have succeeded on any machine; and every
+  `curl -X HEAD` hangs to exit 18. An unrun gate does not only fail to prove its subject, it fails
+  to prove *itself*, and it rots at the rate of code nobody runs.
+- where the verification actually landed — this tasklist's US-1 (`run.sh` exit 0) and US-2 (Swift
+  SIGKILL / offset 5505024 / sha256 match; Kotlin CI run 33044191974 / offset 6553600).
+
+Top-level `correctedBy` and `correctionNote` were added so the correction is visible without
+reading the stories. The diff is +7/−3 lines: no reformat, no re-escape, nothing else moved.
+
+**`README.md`.** *"Nothing moves bytes yet"* → the measured position, with run ids, both resume
+offsets, the SHA-256 match and the 4 KiB / 0 KiB peak-extra-disk measurement, plus a paragraph
+saying plainly that the repository said otherwise for a week and pointing at the new rule.
+*"No conformance vectors yet"* → the 40 + 3 fixture both ports run in CI and the drift control.
+Header date bumped to 2026-08-27. Deliberately left alone: the `Stubbed:` list and the stale Android
+paragraph — `130-roadmap-and-license` owns those and will rewrite this whole section.
+
+**`docs/reference/verification-record.md`** (new) states the rule so it outlives the fix: *a story
+may not be marked passing on the strength of work that its own notes record as not having run.*
+Also: what breaking it cost here, the three places the same three-valued vocabulary already appears
+(`verify.sh` PASS/FAIL/SKIPPED · `lib.sh` 0/1/77 · a story's `passes` + `notes`), the strictness
+switches that make the third column red where a skip would be dishonest, and what an
+evidence-bearing note has to contain. Linked from `docs/README.md`, cross-linked from
+`continuous-integration.md § A skipped check is not a passing check`.
+
+Checks observed: `swift build --package-path ios -Xswiftc -warnings-as-errors` **exit 0**;
+`swift run --package-path ios AmphoraPathTests` **exit 0, 46 passed**;
+`Tests/Conformance/check-single-fixture.sh` **exit 0**; `bash -n` clean on all four integration
+scripts; all 14 tasklist/PRD JSON files parse; relative-link sweep over `README.md` and
+`docs/**/*.md` → **0 broken**.
+
+### Learnings for future iterations
+
+- **Correct a merged record in place; do not rewrite it.** Flip the flag, keep the note verbatim,
+  add a sibling `correction` field. Deleting the note destroys the evidence that the flag was wrong,
+  and rewriting the file wholesale (`json.dump` with different escaping) buries a two-line
+  correction in a 70-line diff nobody will read. `object_pairs_hook=OrderedDict` + `ensure_ascii=
+  False` reproduced this file exactly; check `git diff --stat` before committing a machine-edited
+  JSON and expect single digits.
+- **`docs/README.md` claims every document is linked from it** ("unlinked is unreachable"). There is
+  no gate enforcing it, so a new doc must be added there by hand. A five-line Python sweep over
+  `\](path)` in `README.md` + `docs/**/*.md` catches both that and a typo'd relative path; worth
+  re-running whenever docs move.
+- **The `ios` CI job is still red on `NetworkGovernor.swift:23` and `TUSKitTransport.swift:27`**, as
+  it was for US-2, in files no story here touched, and `main` fails identically. It is the last
+  thing between this branch and a green CI and nothing owns it. A story that fixes those two
+  Swift-concurrency errors is the obvious next piece of work.
+- Both remaining criteria of this tasklist were about the *record*, not the code, and they took
+  about as long as the code did. That is the correct ratio when the artifact being fixed is a
+  claim.
