@@ -35,12 +35,15 @@ android {
             isReturnDefaultValues = true
 
             all {
-                // Both ports read the SAME Tests/Conformance/vectors.json by a repo-root-relative
-                // path (ios/Tests/AmphoraTests/ConformanceTests.swift does the same). Gradle runs
-                // unit tests from the project directory, i.e. android/, where that path does not
-                // resolve. Point the runner at the root rather than forking a second copy of the
-                // fixture, which is exactly the drift the vectors exist to catch.
-                it.workingDir = rootDir
+                // Both ports read the SAME Tests/Conformance/vectors.json — one file, no
+                // per-platform copy, because a second copy would reintroduce exactly the drift
+                // the vectors exist to catch. Tell the tests where the repository root is
+                // instead of moving the runner's working directory to it: the working directory
+                // is a property of whoever launched the build, and making the suite depend on it
+                // is what let `swift run AmphoraPathTests` from ios/ die with a file-not-found
+                // error that read as a broken machine. ConformanceVectors.file() falls back to
+                // walking up from the working directory if this property ever goes missing.
+                it.systemProperty("amphora.repoRoot", rootDir.absolutePath)
 
                 // Print per-test results. `BUILD SUCCESSFUL` on a task that ran zero tests looks
                 // exactly like one that ran forty, and this repo has already merged three stories

@@ -8,7 +8,14 @@ struct UploadPathTests {
         try await cancelDeletesStagedFile()
         try await remainderStreamsFromOffset()
         try await remainderAbortsAndCleansUpWhenPressureRises()
-        try conformanceVectors()
+        // The conformance vectors are the shared fixture, and a fixture the runner cannot find
+        // must fail this suite loudly rather than trap or, worse, be skipped into a green run.
+        do {
+            try conformanceVectors()
+        } catch {
+            FileHandle.standardError.write(Data("Amphora path tests: FAILED — \(error)\n".utf8))
+            exit(1)
+        }
         print("Amphora path tests: 44 passed")
     }
 

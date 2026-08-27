@@ -2,7 +2,7 @@
   "project": "amphora",
   "category": "unblock",
   "branchName": "chief/110-vectors-run-on-both-ports",
-  "description": "**Forty conformance vectors exist and execute on one platform, which defeats the only purpose they have.** `Tests/Conformance/vectors.json` (40 vectors, schemaVersion 1) is read by both ports — `ConformanceTests.swift:6` and `ConformanceVectorsTest.kt:15` — and the whole reason it exists is to stop the Swift and Kotlin state machines drifting apart. A vector suite that runs on Swift only cannot detect Kotlin drift; it provides assurance without providing verification, which is worse than an acknowledged gap.\n\nTwo defects, both verified 2026-08-25:\n\n**The Kotlin side has never been compiled at all** — no JDK, no gradle, no wrapper, and no git remote, so CI never ran it either. `100` fixes that precondition and this tasklist depends on it.\n\n**Both sides load the vectors by a repo-root-relative path**, so running `swift run AmphoraPathTests` from `ios/` crashes with `NSCocoaErrorDomain 260` rather than failing a test. A fixture the runner cannot find is not a red test; it is a crash that reads as an environment problem, and it makes the suite's own working directory a hidden precondition.\n\n**Do not weaken the vectors to make them pass.** The design commitment they protect is real and specific: byte ranges stream from the source file with **no chunk temp files**, taking peak extra storage from roughly 2x the file size to about zero. `NativeResumableTransport.startTransfer` hands `URLSession` the original file with no slicing, and Kotlin must be shown to agree.",
+  "description": "**Forty conformance vectors exist and execute on one platform, which defeats the only purpose they have.** `Tests/Conformance/vectors.json` (40 vectors, schemaVersion 1) is read by both ports \u2014 `ConformanceTests.swift:6` and `ConformanceVectorsTest.kt:15` \u2014 and the whole reason it exists is to stop the Swift and Kotlin state machines drifting apart. A vector suite that runs on Swift only cannot detect Kotlin drift; it provides assurance without providing verification, which is worse than an acknowledged gap.\n\nTwo defects, both verified 2026-08-25:\n\n**The Kotlin side has never been compiled at all** \u2014 no JDK, no gradle, no wrapper, and no git remote, so CI never ran it either. `100` fixes that precondition and this tasklist depends on it.\n\n**Both sides load the vectors by a repo-root-relative path**, so running `swift run AmphoraPathTests` from `ios/` crashes with `NSCocoaErrorDomain 260` rather than failing a test. A fixture the runner cannot find is not a red test; it is a crash that reads as an environment problem, and it makes the suite's own working directory a hidden precondition.\n\n**Do not weaken the vectors to make them pass.** The design commitment they protect is real and specific: byte ranges stream from the source file with **no chunk temp files**, taking peak extra storage from roughly 2x the file size to about zero. `NativeResumableTransport.startTransfer` hands `URLSession` the original file with no slicing, and Kotlin must be shown to agree.",
   "dependsOn": [
     "100-android-into-ci"
   ],
@@ -26,18 +26,18 @@
       "title": "The vectors load from anywhere, on both ports",
       "acceptanceCriteria": [
         "Vector loading is anchored to the repository root by a means that does not depend on the caller's working directory, on both the Swift and Kotlin sides.",
-        "A missing or unreadable vector file FAILS a test with a legible message. It must not crash, and it must not silently pass — an absent fixture reporting green is the failure mode this whole batch is about.",
+        "A missing or unreadable vector file FAILS a test with a legible message. It must not crash, and it must not silently pass \u2014 an absent fixture reporting green is the failure mode this whole batch is about.",
         "`swift run AmphoraPathTests` succeeds from the repository root AND from `ios/`. Both are recorded in the notes."
       ],
-      "passes": false,
-      "notes": null
+      "passes": true,
+      "notes": "Swift: vectors resolved by walking up from #filePath; Kotlin: from the amphora.repoRoot system property Gradle injects (rootDir), falling back to walking up from user.dir \u2014 android/build.gradle.kts no longer moves the runner's workingDir. `swift run --package-path ios AmphoraPathTests` from the repo root: PASSES, 'Amphora path tests: 44 passed'. `swift run AmphoraPathTests` from ios/: PASSES, same line, exit 0 (it crashed with NSCocoaErrorDomain 260 before). Negative controls, both run from ios/: fixture moved away -> 'conformance vectors not found', 8 searched paths listed, exit 1, no trap; fixture rewritten with vectors:[] -> 'malformed: `vectors` is empty - zero vectors is a failure, not a pass', exit 1. Fixture restored, tree clean. .chief/verify.sh: 4 passed, 0 failed, 1 SKIPPED (Gradle - no JDK on this machine), so the Kotlin half of this story is UNVERIFIED locally and is first compiled by the android CI job; US-2 reports what it actually says."
     },
     {
       "id": "US-2",
       "title": "Kotlin executes the same 40 vectors, in CI",
       "acceptanceCriteria": [
         "The Kotlin vector test runs in the android CI job and its result is reported. This is the first execution of that test by anything, so report what it actually says rather than what it was expected to say.",
-        "Both ports run the SAME file — one `vectors.json`, no per-platform copy. A second copy would reintroduce exactly the drift the vectors exist to catch.",
+        "Both ports run the SAME file \u2014 one `vectors.json`, no per-platform copy. A second copy would reintroduce exactly the drift the vectors exist to catch.",
         "Vector count and schemaVersion are asserted, so a truncated or half-written fixture cannot pass as a full run. 'Ran 0 vectors' must be a failure, on the same principle that a test runner discovering zero tests is a failure and not a pass."
       ],
       "passes": false,

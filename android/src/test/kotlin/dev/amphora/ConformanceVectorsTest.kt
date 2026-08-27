@@ -9,10 +9,80 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import java.io.File
 
+/**
+ * Why the vectors are not loaded by a relative path.
+ *
+ * `Tests/Conformance/vectors.json` is the ONE file both ports read, and its whole job is to stop
+ * the Swift and Kotlin state machines drifting apart. Reaching it as a repo-root-relative path
+ * made the runner's working directory a hidden precondition: Gradle runs unit tests from
+ * `android/`, where that path does not resolve, and the previous fix was to move the runner's
+ * working directory instead of anchoring the lookup. `android/build.gradle.kts` now injects
+ * `amphora.repoRoot`; if that is ever absent the search walks up from the working directory
+ * until it finds the fixture. `ios/Tests/AmphoraTests/ConformanceTests.swift` anchors the same
+ * way (from `#filePath`), against the same single file — a second copy of the fixture would
+ * reintroduce exactly the drift the vectors exist to catch.
+ */
+internal object ConformanceVectors {
+    const val RELATIVE_PATH = "Tests/Conformance/vectors.json"
+
+    /** Locate the fixture without consulting — or trusting — the caller's working directory. */
+    fun file(): File {
+        val searched = mutableListOf<File>()
+
+        System.getProperty("amphora.repoRoot")?.takeIf { it.isNotBlank() }?.let { root ->
+            val candidate = File(root, RELATIVE_PATH)
+            searched += candidate
+            if (candidate.isFile) return candidate
+        }
+
+        var directory: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
+        while (directory != null) {
+            val candidate = File(directory, RELATIVE_PATH)
+            searched += candidate
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile
+        }
+
+        throw AssertionError(
+            "conformance vectors not found. Looked for $RELATIVE_PATH under the amphora.repoRoot " +
+                "system property and every ancestor of ${System.getProperty("user.dir")}:\n" +
+                searched.joinToString("\n") { "  - $it" },
+        )
+    }
+
+    /**
+     * Read and shape-check the fixture. Every failure is a legible assertion, never a silent
+     * pass: an absent or half-written fixture reporting green is the failure mode these vectors
+     * exist to rule out.
+     */
+    fun load(): JSONObject {
+        val file = file()
+        val text = try {
+            file.readText()
+        } catch (error: Exception) {
+            throw AssertionError("conformance vectors at $file could not be read: $error", error)
+        }
+        val root = try {
+            JSONObject(text)
+        } catch (error: Exception) {
+            throw AssertionError("conformance vectors at $file are malformed: $error", error)
+        }
+        assertTrue(root.has("schemaVersion"), "conformance vectors at $file: missing schemaVersion")
+        val entries = root.optJSONArray("vectors")
+            ?: throw AssertionError("conformance vectors at $file: missing array `vectors`")
+        assertTrue(
+            entries.length() > 0,
+            "conformance vectors at $file: zero vectors is a failure, not a pass",
+        )
+        return root
+    }
+}
+
 class ConformanceVectorsTest {
     @Test
     fun sharedVectorsMatchAndroidPort() {
-        val root = JSONObject(File("Tests/Conformance/vectors.json").readText())
+        val root = ConformanceVectors.load()
+        assertEquals(1, root.getInt("schemaVersion"), "vectors schemaVersion")
         val entries = root.getJSONArray("vectors")
         for (index in 0 until entries.length()) {
             val vector = entries.getJSONObject(index)
