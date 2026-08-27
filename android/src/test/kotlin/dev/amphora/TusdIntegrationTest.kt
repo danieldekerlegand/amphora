@@ -49,7 +49,7 @@ class TusdIntegrationTest {
 
         // A dedicated tree so the sampler below measures this test and nothing else. `java.io.tmpdir`
         // is redirected per test JVM in android/build.gradle.kts.
-        val tmp = File(System.getProperty("java.io.tmpdir"))
+        val tmp = File(checkNotNull(System.getProperty("java.io.tmpdir")))
         val sourceFile = File(tmp, "amphora-tusd-source.bin")
         sourceFile.outputStream().buffered().use { out ->
             repeat(SIZE_BYTES) { out.write(it % 251) }
@@ -215,7 +215,7 @@ class TusdIntegrationTest {
         val root = System.getProperty("amphora.repoRoot") ?: return
         val report = File(root, "android/build/reports/tusd-real-wire.txt")
         runCatching {
-            report.parentFile.mkdirs()
+            report.parentFile?.mkdirs()
             report.writeText(line + "\n")
         }
     }
