@@ -168,6 +168,10 @@ These are the assertions the test suite exists to defend.
 - **I6 — No chunk temp file outlives a single transport attempt.** The default path
   materializes *zero* chunk files: byte ranges stream from the source. This is the invariant
   that retires the original `TransferUtility` corruption bug rather than working around it.
+  It is the one invariant here with transport-level vectors of its own
+  (`transportInvariants.i6NoChunkTempFiles`, run by both ports) rather than transition rows,
+  because a port that stages "just the remainder" satisfies every row in the table while doubling
+  peak storage. See [conformance-vectors.md](conformance-vectors.md).
 
 - **I7 — Offsets are monotonic.** A server offset lower than a previously acked one means the
   resource was recycled underneath us. Treat as `EXPIRED`; never "resume" downward.

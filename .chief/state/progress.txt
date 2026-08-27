@@ -1,237 +1,208 @@
-# Chief Progress — 100-android-into-ci
-Started: Wed Aug 26 23:12:47 CDT 2026
+# Chief Progress — 110-vectors-run-on-both-ports
+Started: Wed Aug 26 23:44:21 CDT 2026
 ---
 
-## US-1 — The repository has a remote, and the workflow fires on how work actually lands
+## US-1 — The vectors load from anywhere, on both ports (2026-08-26)
 
-Implemented in commit `a84c63b` (previous iteration ended before the bookkeeping); this iteration
-verified every criterion against reality and recorded the evidence.
+WHAT: `Tests/Conformance/vectors.json` was reached by a repo-root-relative path on both ports,
+making the caller's working directory a hidden precondition of the shared fixture. Both sides now
+anchor the lookup instead of assuming a working directory.
 
-Files changed by the story: `.github/workflows/ci.yml` (trigger + a comment block explaining why
-`push` and not `pull_request`), `docs/reference/continuous-integration.md` (new), `docs/README.md`
-(link). This iteration changed only `.chief/state/prd.json`, `tasks/chief/100-android-into-ci.json`
-and this log.
+FILES CHANGED
+- ios/Tests/AmphoraTests/ConformanceTests.swift — added `ConformanceVectors` (walks up from
+  `#filePath` looking for `Tests/Conformance/vectors.json`) and `ConformanceVectorsError`
+  (`notFound` lists every path searched / `unreadable` / `malformed`). `load()` shape-checks the
+  fixture: top level is an object, `schemaVersion` is an Int, `vectors` is a non-empty array.
+  Failures THROW; they are not `precondition` traps.
+- ios/Tests/AmphoraTests/UploadPathTests.swift — `main()` catches the load error, writes
+  `Amphora path tests: FAILED — <error>` to stderr and `exit(1)`. Without the catch, a top-level
+  throw prints the generic NSError blurb and reads as an environment problem.
+- android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt — added an internal
+  `ConformanceVectors` object with the same contract: `amphora.repoRoot` system property first,
+  then walk up from `user.dir`; `AssertionError` with the searched list when absent; asserts
+  `schemaVersion` present, `vectors` present and non-empty. Test now also asserts schemaVersion == 1.
+- android/build.gradle.kts — replaced `it.workingDir = rootDir` with
+  `it.systemProperty("amphora.repoRoot", rootDir.absolutePath)`. Moving the runner's working
+  directory was the same class of fix as the bug.
 
-Observed:
-- `origin` = https://github.com/danieldekerlegand/amphora; `git ls-remote --heads origin` shows
-  `refs/heads/main` at `2a93917`, identical to local `main`. The remote exists and main is pushed.
-- Visibility is **PUBLIC** (`gh repo view --json visibility` → `"PUBLIC"`), so Actions minutes are
-  free and the blocked private-repo billing cannot stop a run. Recorded, with the if-ever-private
-  consequence, in `docs/reference/continuous-integration.md`.
-- **Run 33038526156** — push, `chief/100-android-into-ci`, head `a84c63b`, 2m4s, conclusion
-  **failure**. Jobs: `react-native` **success**; `ios` **failure**; `android` **failure**.
-- Local `.chief/verify.sh`: PASS Swift build, PASS Swift tests, PASS TypeScript typecheck,
-  SKIPPED Gradle (no toolchain locally). 0 failures.
+OBSERVED
+- `swift build --package-path ios -Xswiftc -warnings-as-errors`: Build complete.
+- `swift run --package-path ios AmphoraPathTests` from the repo root: `Amphora path tests: 44 passed`.
+- `swift run AmphoraPathTests` from `ios/`: `Amphora path tests: 44 passed`, exit 0. This is the
+  invocation that previously died with NSCocoaErrorDomain 260.
+- Negative control, fixture moved away: `conformance vectors not found`, 8 candidate paths listed,
+  exit 1, no trap. Negative control, fixture rewritten with `"vectors": []`: `malformed: \`vectors\`
+  is empty — zero vectors is a failure, not a pass`, exit 1. Fixture restored; `git status Tests`
+  clean.
+- `.chief/verify.sh`: 4 passed, 0 failed, 1 SKIPPED (Gradle — no JDK on PATH).
 
-### Two real failures the first-ever run exposed
+## Learnings for future iterations
 
-1. **android** — `gradle :android:assemble` fails. This is exactly what US-2 exists to confront;
-   the first genuine compile of the Kotlin port has now happened and it is red.
-2. **ios** — `swift build --package-path ios -Xswiftc -warnings-as-errors` fails with
-   `stored property 'session' of 'Sendable'-conforming struct '...' has non-sendable type
-   'BackgroundSessionManager'` in both `Transport/NativeResumableTransport.swift:16` and
-   `Transport/TUSKitTransport.swift:27`; `Session/BackgroundSessionManager.swift:19` declares
-   `public final class BackgroundSessionManager: NSObject` with no `Sendable` conformance.
-   **This is NOT covered by any story in this tasklist** and it is not caught locally, because
-   `.chief/verify.sh` runs `swift build` *without* `-warnings-as-errors` while CI runs it *with*.
-   Someone has to close that gap or the branch's CI stays red for a reason no story owns.
+- NO JDK ON THIS MACHINE. `/usr/bin/java` exists but is the macOS stub and exits non-zero;
+  `.chief/verify.sh` probes with `java -version` and reports Gradle as SKIPPED. Nothing Kotlin can
+  be compiled locally — the android CI job (`./gradlew --no-daemon :android:testDebugUnitTest`) is
+  the first thing that ever compiles it. Say so in notes rather than implying Kotlin was verified.
+- The Swift "test suite" is an executable target (`AmphoraPathTests`), not XCTest. Assertions are
+  `precondition`, which TRAPS. For anything a story calls a "failure that must not crash", throw a
+  `LocalizedError` and catch it in `main()` — a trap and a thrown error look very different to
+  someone reading CI output.
+- `#filePath` is the only compile-time anchor available to the Swift target; there is no bundle
+  resource path (`AmphoraPathTests` declares no resources). Walking up from it is the pattern to
+  reuse for any other repo-root fixture.
+- Run negative controls with ABSOLUTE paths. The Bash tool's working directory persists across
+  calls, so a `cd ios` in an earlier call silently made a later `swift run --package-path ios`
+  resolve to `ios/ios`.
 
-### Learnings for future iterations
+## US-2 — Kotlin executes the same 40 vectors, in CI (2026-08-26)
 
-- The local gate and the CI gate are **not running the same commands**. `verify.sh` omits
-  `-Xswiftc -warnings-as-errors` and skips Gradle entirely; CI does neither. A green
-  `verify.sh` therefore does not predict a green run — check `gh run list` before believing a
-  branch is clean. US-3 is the story that should encode this difference rather than leave it
-  implicit.
-- Evidence commands that actually settle things here: `gh run list --limit 5`,
-  `gh run view <id> --json conclusion,jobs`, `gh run view <id> --log-failed`,
-  `gh repo view --json visibility`, `git ls-remote --heads origin`.
-- A run's **conclusion** is the claim. "CI is wired" without a run id behind it is the failure
-  mode this tasklist was written to end.
+WHAT: The android CI job already invoked `:android:testDebugUnitTest`, so the Kotlin vector test
+was reachable; what it could NOT do was tell "ran 40 vectors" from "ran none". Both ports skip the
+one non-reducing row (`row-01-enqueue` — `Enqueue` creates a job rather than reducing one) with a
+bare `continue`, so a fixture whose rows had all degenerated to `Enqueue` would skip all forty,
+exercise nothing, and still report green. Same class of failure as a test runner that discovers
+zero tests and calls it a pass. Also made "one file, no per-platform copy" a gate instead of a
+comment.
 
----
+FILES CHANGED
+- android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt — companion object holds
+  EXPECTED_SCHEMA_VERSION/EXPECTED_VECTOR_COUNT/EXPECTED_UNREDUCED_COUNT. Count asserted BEFORE the
+  loop; `reduced` and `unreduced` counted inside it and asserted after.
+- ios/Tests/AmphoraTests/ConformanceTests.swift — the identical three constants and the identical
+  two post-loop assertions, as preconditions (the convention in this target).
+- Tests/Conformance/check-single-fixture.sh — NEW. Reads the git index, no toolchain. Fails on (1)
+  a second tracked file whose BASENAME is vectors.json, (2) any other tracked *.json containing the
+  vector id `row-01-enqueue` — catches a copy renamed on the way in, (3) either port no longer
+  naming `Tests/Conformance/vectors.json` — catches a port repointed at its own fixture without
+  deleting anything.
+- .github/workflows/ci.yml — new `conformance-fixture` job running that script.
+- docs/reference/continuous-integration.md — new section: which job runs the vectors on each port,
+  why ran-zero-vectors is a failure, and what the one-file gate checks.
 
-## US-2 — Kotlin actually compiles, on a machine that has a toolchain
+OBSERVED (CI run 33040844045, branch chief/110-vectors-run-on-both-ports)
+- android (job 98413854669): `ConformanceVectorsTest > sharedVectorsMatchAndroidPort PASSED`,
+  StorageGovernorTest PASSED, TusdIntegrationTest SKIPPED, BUILD SUCCESSFUL in 28s.
+- conformance-fixture (job 98413854465): `check-single-fixture: one fixture at
+  Tests/Conformance/vectors.json, referenced by both ports`, 5s, green.
+- verify-policy green, react-native green.
+- ios RED. NOT caused by this commit — the same three errors as run 33040087311 on the previous
+  branch: NetworkGovernor.swift:23 `reference to captured var 'self' in concurrently-executing
+  code`, and non-Sendable `BackgroundSessionManager` stored in NativeResumableTransport.swift:16
+  and TUSKitTransport.swift:27. Already recorded in
+  docs/reference/continuous-integration.md#known-divergence as owned by nobody. Left alone
+  deliberately: two of the three are a real Sendable redesign, not a one-liner, and rewriting
+  production transport code inside a story about test wiring is the wrong trade.
+- Local negative controls, all restored afterwards (`git status` clean):
+  fixture truncated to 18 rows -> `Precondition failed: expected 40 vectors in .../vectors.json,
+  got 18`; every row's event rewritten to Enqueue -> `expected 1 non-reducing (Enqueue) vector, got
+  40`; per-platform copy -> exit 1; copy renamed to ios/conformance-snapshot.json -> exit 1 on the
+  sentinel; Kotlin port repointed at vectors-android.json -> exit 1.
+- Local: `swift build --package-path ios -Xswiftc -warnings-as-errors` Build complete;
+  `swift run AmphoraPathTests` 44 passed from the repo root AND from ios/; `.chief/verify.sh`
+  3 passed, 0 failed, 1 SKIPPED (Gradle — no JDK).
 
-The Kotlin port had never been handed to a compiler. It has now, three times, and it is green.
+## Learnings for future iterations
 
-**Evidence.** Run **33039508625** (push, `chief/100-android-into-ci`, head `09eac78`) —
-`android` job **success**. `./gradlew --no-daemon :android:assemble` → BUILD SUCCESSFUL in 1m 46s
-(54 tasks). `./gradlew --no-daemon :android:testDebugUnitTest` → BUILD SUCCESSFUL in 26s:
+- THE ANDROID JOB IS GREEN AND THE KOTLIN VECTOR TEST RUNS. First execution was run 33040087311
+  (previous branch, old working-directory wiring); run 33040844045 is the first under US-1's
+  anchored loader plus the new count assertions. Do not describe the Kotlin port as un-run.
+- The ios job is the one that is red, on three pre-existing Swift-concurrency errors that LOCAL
+  Swift 6.2.3 does not surface at all — `swift build -Xswiftc -warnings-as-errors` passes here and
+  fails on the runner. A green local verify does not predict a green run; check `gh run list`.
+- `git ls-files -- '*vectors.json'` is a SUFFIX glob, not a basename match: it matched
+  `tasks/chief/completed/50-conformance-vectors.json` and produced a false failure on the first
+  try. Filter on `basename` instead.
+- Content sentinels beat filename matching for "is there a second copy of this fixture" checks —
+  grepping tracked `*.json` for one vector id catches a copy that was renamed on the way in.
+- Push the branch to get a real verdict. CI fires on `chief/**`, the run takes ~3 minutes, and
+  `gh run view <id> --log --job <job-id>` is how you read what a test actually printed rather than
+  what it was expected to print.
+- STILL OUTSTANDING FOR US-3: the Kotlin assertions added here have never been driven RED. Their
+  Swift twins have (both controls above). US-3's negative control must exercise the Kotlin side
+  specifically, in CI, since no JDK exists on this machine.
 
-    ConformanceVectorsTest > sharedVectorsMatchAndroidPort                        PASSED
-    StorageGovernorTest > reserveDelegatesToAllocatorBeforeReturningReservation   PASSED
-    TusdIntegrationTest > completesMultiMegabyteUploadAndTerminatesResource       SKIPPED
+## US-3 — Drift is proven to be caught (2026-08-27)
 
-The overall run conclusion is still `failure`, entirely because of the `ios` Sendable error US-1
-recorded — no story in this tasklist owns it. `react-native` success, `android` success.
+WHAT: The vectors being green proved the two ports AGREE. Nothing proved the suite would NOTICE if
+they stopped — and this repo had already shipped exactly that failure (forty vectors, one platform).
+So: a committed negative control that drives both suites red on purpose, plus vectors for the one
+design commitment that had four prose statements and zero checks.
 
-**Files changed.** `gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.{jar,properties}` (new,
-Gradle 8.10.2); `.github/workflows/ci.yml`; `android/build.gradle.kts`;
-`android/src/main/kotlin/dev/amphora/transport/CallAwait.kt` (new);
-`.../core/SourceResolver.kt`; `.../work/UploadWorker.kt`; `.chief/verify.sh`.
+FILES CHANGED
+- Tests/Conformance/drift-control.sh — NEW. Four controls, two per port: a state-machine drift
+  (SourceMissing reduces to BLOCKED instead of FAILED) that row-04-source-missing must catch, and an
+  I6 drift (the transport writes a chunk temp file) that the new I6 rows must catch. Each mutation
+  is applied to the working tree, run, and restored from a byte-for-byte backup on every exit path
+  including interrupt; the script's last act proves all four target files match the copies it took
+  at startup. It never stashes and never commits. A control is only accepted when the suite exits
+  NON-ZERO **and** prints the expected vector id — a file that no longer compiles also exits
+  non-zero. Missing anchor text is fatal, not a warning.
+- Tests/Conformance/apply-mutation.py — NEW. The exact-text replacement drift-control.sh uses.
+  Separate file because a python heredoc nested inside a shell heredoc terminates at the wrong `PY`.
+- Tests/Conformance/vectors.json — schemaVersion 1 -> 2, new `transportInvariants.i6NoChunkTempFiles`
+  (3 rows: fresh transfer, resume mid-file, resume at the last byte).
+- ios/Tests/AmphoraTests/ConformanceTests.swift — I6 runner. Per row: a scratch dir holding a
+  generated source file, installed as the process temp dir (TMPDIR) for the duration, inventoried
+  before and after; asserts the session was handed the ORIGINAL file (same path, same length on
+  disk), sizeBytes-resumeFrom expected bytes, no stagedRemainderPath, and zero files created.
+- ios/Sources/Amphora/Transport/NativeResumableTransport.swift — `BackgroundUploadStarting` protocol
+  seam + a `BackgroundUploadStarter` wrapper so the transport stays Sendable without a real
+  background URLSession in the test.
+- android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt — the same three rows against
+  RangeRequestBody: streams exactly source[offset, size) to its sink, declares that window as
+  Content-Length, leaves the source unmodified, creates no file (java.io.tmpdir repointed at the
+  scratch dir for the duration).
+- .github/workflows/ci.yml — `--port swift` step in ios, `--port kotlin` step in android; --stacktrace
+  on the assemble step.
+- docs/reference/conformance-vectors.md — NEW, linked from docs/README.md and state-machine.md I6.
+- gradle.properties — Gradle heap 2g -> 4g.
+- Tests/Conformance/check-single-fixture.sh — sentinel now matched as an "id"/value PAIR.
 
-### What the compiler found — five defects, in the order it found them
+OBSERVED
+- CI run 33042568129 (head 9ddf6f2): android SUCCESS. Green path: ConformanceVectorsTest >
+  sharedVectorsMatchAndroidPort PASSED and > sharedI6VectorsHoldForTheAndroidTransport PASSED,
+  BUILD SUCCESSFUL in 25s. Control: state-machine drift -> sharedVectorsMatchAndroidPort FAILED
+  (AssertionError at ConformanceVectorsTest.kt:144) naming row-04-source-missing; I6 drift ->
+  sharedI6VectorsHoldForTheAndroidTransport FAILED (ConformanceVectorsTest.kt:239) with 'I6
+  violated'. Verdict line: "drift-control: 2 control(s) ran, 0 skipped, 0 failure(s) … every
+  divergence introduced was caught by the vectors that were supposed to catch it".
+- conformance-fixture, verify-policy, react-native: SUCCESS. ios: FAILURE, on exactly the two
+  pre-existing errors (NetworkGovernor.swift:23, TUSKitTransport.swift:27) and none of mine, so the
+  Swift drift step never executes on the runner.
+- Locally: `swift build --package-path ios -Xswiftc -warnings-as-errors` Build complete;
+  "Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6 transport
+  vectors)"; drift-control --port swift = 2 controls, 0 failures, messages 'Precondition failed:
+  row-04-source-missing: expected failed, got blocked' and 'i6-01-fresh-transfer: I6 violated — 1
+  file(s) materialised during the attempt (vector.chunk), expected 0'; .chief/verify.sh 3 passed,
+  0 failed, 1 SKIPPED (Gradle, no JDK).
 
-1. **`androidx.room:room-ktx` missing.** kapt rejected *every* `suspend`/`Flow` DAO query:
-   "To use Coroutine features, you must add `ktx` artifact from Room". Run 33038526156.
-2. **`Call.await()` had never been written.** `TusTransport` called it at four sites. Added
-   `transport/CallAwait.kt` — an `enqueue`-based `suspendCancellableCoroutine` bridge, so
-   cancelling the coroutine cancels the HTTP call instead of leaking the socket.
-3. **`UploadWorker` referenced `AmphoraGraph` with no import.**
-4. **`ParcelFileDescriptor.seekTo()` does not exist.** `SourceResolver.open` used it to probe
-   seekability. Replaced with `Os.lseek(fd, 0, SEEK_SET)`, which is what actually raises
-   `ErrnoException(ESPIPE)` on a pipe — the behaviour the surrounding comment already claimed.
-   Run 33039150462.
-5. **`CoroutineWorker.onStopped()` is final.** WorkManager expresses the stop as *cancellation of
-   `doWork`'s coroutine*, so the override could never have existed. The offset flush and lease
-   release moved into a `withContext(NonCancellable)` `finally` — `NonCancellable` is load-bearing
-   there, since the job is already cancelled when Android 15 pulls the FGS budget.
-   Run 33039150462.
+## Learnings for future iterations
 
-### Toolchain and wrapper
-
-Gradle **8.10.2** pinned (AGP 8.6.1 needs ≥ 8.7; Kotlin 2.0.21). Both the distribution
-(`31c55713…4c26`) and the wrapper jar (`2db75c40…8046`) are checksum-pinned and match
-`services.gradle.org`'s published values. CI now runs `gradle/actions/wrapper-validation@v4`
-(**success**) so the committed binary is checked against Gradle's known-good list, and invokes
-`./gradlew` rather than the runner image's ambient gradle — which was 9.7.0 and could change under
-us without a commit here.
-
-### Test-harness fixes (the tests could not have run without these)
-
-- `testOptions.unitTests.isReturnDefaultValues = true` — the mockable `android.jar` throws
-  `RuntimeException("Stub!")` from every framework method, and `StorageGovernorTest` subclasses a
-  real `ContextWrapper`.
-- `testImplementation("org.json:json:20240303")` — `org.json` is stubs-only in `android.jar`, and
-  `ConformanceVectorsTest` parses the shared vector file with it.
-- unit-test `workingDir = rootDir` — both ports read the *same* repo-root-relative
-  `Tests/Conformance/vectors.json`; Gradle runs tests from `android/`. Deliberately not a second
-  copy of the fixture, and deliberately not a fix to the path itself, which is `110`'s story.
-- `kapt` `room.schemaLocation` — `UploadDatabase` sets `exportSchema = true` and was exporting
-  nothing.
-- `testLogging { events("passed", "skipped", "failed") }` — so a task that runs zero tests cannot
-  read as one that runs forty.
-
-### Learnings for future iterations
-
-- **The wrapper alone breaks the local gate.** `.chief/verify.sh` branched on `[ -x ./gradlew ]`;
-  committing one made it try to run Gradle on a Mac with no JDK, which would have turned a
-  legitimate SKIP into a FAIL. It now probes `java -version` first. US-3 owns making that
-  distinction rigorous, but it had to be correct the moment the wrapper landed.
-- **CI is the only Kotlin compiler available here.** No JDK, no Android SDK locally, and the SDK is
-  far too heavy to install for this. Budget ~3 minutes per Android round trip and batch fixes by
-  reading every source file before pushing; that is what kept this to three runs for five defects.
-- **`gh run view <id> --job=<jobId> --log`** is the command that gives you per-test lines;
-  `--log-failed` gives you nothing once the job is green.
-- **Two real defects the compiler cannot see, left unfixed and recorded here** (neither is in any
-  story's criteria; both are behavioural):
-  - `AmphoraGraph.of(context)` constructs a **brand-new graph on every call** — no caching, unlike
-    `AmphoraUploader.get`. Every `UploadWorker` execution therefore builds its own Room database
-    and its own governors, which defeats the single-runner lease it relies on.
-  - `Reconciler.liveWorkJobIds()` calls `getWorkInfosByTag("amphora-job")`, but `UploadWorker`
-    tags work as `"amphora-job:$jobId"`. The tag never matches, so reconciliation adopts nothing
-    and will restart work that is already running.
-
----
-
-## US-3 — A skipped check can never read as a passing one
-
-`.chief/verify.sh` reported two outcomes and exited 0 when a toolchain was missing, so a run
-that compiled nothing was indistinguishable from a run that compiled everything. It now reports
-three, and the two environments disagree about skips on purpose.
-
-**Files changed.** `.chief/verify.sh`; `.chief/tests/verify-skip-policy.sh` (new);
-`.github/workflows/ci.yml` (new `verify-policy` job); `docs/reference/continuous-integration.md`
-(new section "A skipped check is not a passing check"); `docs/README.md`.
-
-### The policy
-
-- `PASS` / `FAIL` / **`SKIPPED`** — and skips are counted separately and **named** in the summary
-  (`verify: SKIPPED checks — these did NOT run and are UNVERIFIED:`), because "3 skipped" does not
-  tell you that *Android* is the one nobody compiled.
-- Any run with a skip in it ends `nothing failed, but N check(s) never ran. This is NOT a full
-  pass.` The line `every check ran and passed` is now reachable only by a fully-executed run.
-- **Local:** skip is tolerated, exit 0. **Strict (CI):** skip is a `FAIL`, exit 1. Selected by
-  `CI=true` (GitHub Actions sets it); `AMPHORA_VERIFY_STRICT=1/0` overrides either way.
-
-### Evidence
-
-Local gate on this branch: `3 passed, 1 skipped, 0 failed`, exit 0 — the skip is `Gradle build —
-no JDK on PATH`, named in the roster.
-
-`.chief/tests/verify-skip-policy.sh` runs the *real* verify.sh with an **emptied PATH** — the
-"Android toolchain removed" counterfactual, plus the other two for free, at zero build cost
-because nothing can run — and asserts case 1 (local: SKIPPED, never PASS, exit 0, all four skips
-named, no "every check ran and passed"), case 2 (`CI=true`: FAIL, non-zero, no bare SKIPPED line),
-case 3 (the override works in both directions).
-
-**Run 33039907367** (push, head `cce0732`), job `verify-policy` **success** —
-`| SKIPPED Gradle build: no JDK on PATH` / `| verify: 0 passed, 4 skipped, 0 failed` /
-`| This is NOT a full pass.` then `| FAIL Gradle build: SKIPPED (no JDK on PATH)` /
-`| verify: 0 passed, 4 skipped, 4 failed`, ending
-`verify-skip-policy: all assertions passed`. Jobs: `verify-policy` success, `android` success,
-`react-native` success, `ios` **failure** — still the Sendable error US-1 recorded, which no
-story in this tasklist owns.
-
-The test is **not vacuous**: mutating verify.sh's CI detection to `elif false` locally produced
-3 failed assertions ("expected a non-zero exit under CI=true, got 0").
-
-### Learnings for future iterations
-
-- **`verify.sh` is still not identical to CI**, and that is now written down in
-  `docs/reference/continuous-integration.md` under "Known divergence" rather than left as folklore:
-  verify.sh omits `-Xswiftc -warnings-as-errors` (which is why the `ios` red is invisible locally)
-  and runs `./gradlew build` where CI runs `:android:assemble` + `:android:testDebugUnitTest`.
-  A green verify.sh does not predict a green run — check `gh run list`.
-- **The counterfactual is cheap because an empty PATH skips everything.** `env -i PATH=$(mktemp -d)`
-  gives a hermetic "no toolchain" machine in milliseconds; no need to uninstall anything or to
-  reach for a container.
-- **Bash here is 3.2** (macOS `/usr/bin/env bash`). Avoid arrays under `set -u`; the skip roster is
-  a newline-accumulated string for exactly that reason.
-- **`$?` after `out="$(cmd)"`** is the command's status, which is what makes the two-verdict
-  assertions readable. Capturing through a pipe to `tail` loses it — check the exit separately.
-- **The `ios` Sendable failure is now the only red job on this branch** and it belongs to no story
-  here. Whoever picks it up: `BackgroundSessionManager` is a `public final class: NSObject` with no
-  `Sendable` conformance, stored in the `Sendable`-conforming structs `NativeResumableTransport`
-  and `TUSKitTransport`.
-
----
-
-## Tasklist close-out — final state of the branch
-
-All three stories read `"passes": true` in both `.chief/state/prd.json` and
-`tasks/chief/100-android-into-ci.json`. Working tree clean at `e86b332`; the branch is pushed
-(`git ls-remote --heads origin chief/100-android-into-ci` → `e86b332`).
-
-**Final CI run for the branch head: 33040087311** (push, `chief/100-android-into-ci`, head
-`e86b332`), conclusion **failure**. Jobs: `verify-policy` **success**, `android` **success**,
-`react-native` **success**, `ios` **failure**.
-
-**Local gate at `e86b332`:** `3 passed, 1 skipped, 0 failed`, exit 0 — PASS Swift build,
-PASS Swift tests (44 passed), PASS TypeScript typecheck, SKIPPED Gradle build (no JDK on PATH,
-named in the roster as UNVERIFIED). Per US-3's policy the run ends "This is NOT a full pass."
-
-### The one thing this tasklist did not close, stated plainly
-
-The `ios` job is red and has been since the first run ever executed here (33038526156). It is
-**not owned by any story in this tasklist** — US-1 discovered it, US-2 and US-3 recorded it, none
-of the three has an acceptance criterion covering it. It is:
-
-    swift build --package-path ios -Xswiftc -warnings-as-errors
-    error: stored property 'session' of 'Sendable'-conforming struct
-           'NativeResumableTransport' has non-sendable type 'BackgroundSessionManager'
-      ios/Sources/Amphora/Transport/NativeResumableTransport.swift:16
-      ios/Sources/Amphora/Transport/TUSKitTransport.swift:27
-      ios/Sources/Amphora/Session/BackgroundSessionManager.swift:19
-        public final class BackgroundSessionManager: NSObject   // no Sendable conformance
-
-It is invisible to `.chief/verify.sh` because that script omits `-Xswiftc -warnings-as-errors`
-(the "Known divergence" section of `docs/reference/continuous-integration.md`). **Whoever picks up
-the next tasklist: the branch's CI conclusion will stay `failure` until this is fixed, and that
-red is real, not noise.**
-
-Also still open, from US-2's compile pass and equally unowned (behavioural, invisible to a
-compiler): `AmphoraGraph.of(context)` builds a fresh graph per call, and
-`Reconciler.liveWorkJobIds()` queries tag `"amphora-job"` while `UploadWorker` tags
-`"amphora-job:$jobId"`, so reconciliation adopts nothing.
+- THE CI SWIFT REJECTS `nonisolated(unsafe)` ON A STRUCT'S STORED PROPERTY ("'nonisolated' is
+  redundant … this is an error in Swift 6") while the local toolchain accepts it as a suppression.
+  To hold a non-Sendable reference inside a Sendable struct, wrap it in a small
+  `struct X: @unchecked Sendable` instead — that compiles identically in both places. Do not
+  discover this by pushing: it costs a CI round trip (~4 min).
+- The local Swift does NOT warn about a non-Sendable CLASS stored in a Sendable struct, but DOES
+  warn about a non-Sendable EXISTENTIAL (`any P`). So converting a concrete stored property to a
+  protocol for testability can turn a locally-green build red without changing anything real.
+- A CONTENT SENTINEL MUST BE SPECIFIC ENOUGH NOT TO MATCH PROSE. check-single-fixture.sh grepped
+  tracked *.json for `row-01-enqueue` and went red on de1b5cb because chief's own prd.json and
+  tasks/*.json quote that id when a story's notes describe the check. Matching `"id": "<sentinel>"`
+  fixes it and still catches a reformatted copy. Gates that fire on people writing about them get
+  ignored.
+- THE ANDROID JOB WAS FLAKING INSIDE KAPT, twice in three runs (33041928703 killed
+  kaptReleaseKotlin, 33042386253 killed kaptDebugKotlin), with no diagnostic beyond "A failure
+  occurred while executing KaptExecutionWorkAction" — and a rerun of the identical commit passed.
+  Both kapt tasks run concurrently in-process and the daemon heap was 2g; 4g plus --stacktrace.
+  If it recurs, the stacktrace is now in the log. `gh run rerun <id> --failed` is how to tell a
+  flake from a real failure.
+- Gradle's `--tests 'dev.amphora.ConformanceVectorsTest'` filter works on `testDebugUnitTest`, and
+  android/build/test-results/testDebugUnitTest/*.xml carries the assertion message even when the
+  console output elides it. Cat the XML when grepping for WHY a Kotlin test failed.
+- Swift's FileManager enumerator reports /private/var/… while `temporaryDirectory.path` is /var/…;
+  resolve symlinks on BOTH sides before diffing directory inventories or the relative paths in the
+  failure message come out mangled.
+- The negative-control pattern in this repo is now: mutate → run → require red FOR THE NAMED REASON
+  → restore → prove the tree is byte-identical. `.chief/tests/verify-skip-policy.sh` and
+  `Tests/Conformance/drift-control.sh` are the two instances; copy their shape rather than writing
+  a fresh one.

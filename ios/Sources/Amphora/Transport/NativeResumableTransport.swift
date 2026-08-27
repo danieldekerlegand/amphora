@@ -1,5 +1,41 @@
 import Foundation
 
+/// The one call this transport makes into the session layer.
+///
+/// A protocol rather than the concrete `BackgroundSessionManager` so the I6 conformance vectors
+/// (`Tests/Conformance/vectors.json` → `transportInvariants.i6NoChunkTempFiles`) can observe what
+/// the transport hands over — which file, and how many bytes it expects to send — without standing
+/// up a real background `URLSession` and putting a task on the wire. `BackgroundSessionManager` is
+/// the only production conformer; the seam exists because "we hand over the original file, never a
+/// slice of it" is a claim worth checking rather than asserting in a comment.
+public protocol BackgroundUploadStarting: AnyObject {
+    func startUpload(jobId: String, request: URLRequest, fileURL: URL, expectedBytes: Int64) -> Int
+}
+
+extension BackgroundSessionManager: BackgroundUploadStarting {}
+
+/// A `Sendable` handle to whatever starts background uploads.
+///
+/// `UploadTransport` is `Sendable`, so a transport that stores a session reference directly stores
+/// a non-`Sendable` class inside a `Sendable` struct — the complaint the `ios` CI job already
+/// carries for `TUSKitTransport`, and one this seam would otherwise add a second instance of. The
+/// wrapper is where the assertion is made instead of at the top of a whole class: the only thing
+/// reachable through it is `startUpload`, which touches nothing but `URLSession`, and `URLSession`
+/// is documented as safe to use from any thread. It is deliberately NOT the Sendable redesign
+/// `BackgroundSessionManager` still needs — see docs/reference/continuous-integration.md,
+/// "Known divergence".
+public struct BackgroundUploadStarter: @unchecked Sendable {
+    private let session: any BackgroundUploadStarting
+
+    public init(_ session: any BackgroundUploadStarting) {
+        self.session = session
+    }
+
+    func startUpload(jobId: String, request: URLRequest, fileURL: URL, expectedBytes: Int64) -> Int {
+        session.startUpload(jobId: jobId, request: request, fileURL: fileURL, expectedBytes: expectedBytes)
+    }
+}
+
 /// iOS 17+ path. The good one.
 ///
 /// `URLSession` implements `draft-ietf-httpbis-resumable-upload` natively: it discovers server
@@ -13,16 +49,16 @@ import Foundation
 @available(iOS 17.0, *)
 public struct NativeResumableTransport: UploadTransport {
 
-    private let session: BackgroundSessionManager
+    private let session: BackgroundUploadStarter
     private let dialect: any WireDialect
     private let control: ControlPlaneClient
 
     public init(
-        session: BackgroundSessionManager,
+        session: any BackgroundUploadStarting,
         dialect: any WireDialect = RufhDialect(),
         control: ControlPlaneClient
     ) {
-        self.session = session
+        self.session = BackgroundUploadStarter(session)
         self.dialect = dialect
         self.control = control
     }

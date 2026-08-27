@@ -26,6 +26,10 @@ documentation still greps as current.
   source × interruption evidence ledger, including explicit physical-device gaps.
 - [Environmental claim evidence](reference/environment-evidence.md) — observed automated evidence,
   device-only gaps, and commands required to close them.
+- [Conformance vectors](reference/conformance-vectors.md) — the one fixture both ports read: what
+  the 40 transition rows and 3 transport rows actually assert, the fields they state but nobody
+  checks, the invariants with no vector at all, and the committed negative control that proves the
+  suite catches drift instead of merely reporting agreement.
 - [Continuous integration](reference/continuous-integration.md) — the remote, the deliberate
   public-visibility decision and its billing reason, and why the workflow triggers on `push`
   rather than `pull_request`. Also the three-outcome verify policy: why a SKIPPED check is

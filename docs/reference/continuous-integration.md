@@ -61,6 +61,83 @@ gh run view <run-id>
 A run's **conclusion** is the claim. "CI is wired" is not evidence; a run id and its conclusion
 are. Related: [Environmental claim evidence](environment-evidence.md).
 
+## The conformance vectors run on both ports
+
+`Tests/Conformance/vectors.json` (40 transition vectors plus 3 transport vectors, `schemaVersion` 2)
+exists for exactly one reason: to
+stop the Swift and Kotlin state machines drifting apart. A vector suite that runs on one platform
+cannot do that — it provides assurance without verification, which is worse than an acknowledged
+gap. Both ports therefore run in CI, against that one file:
+
+| Job | Step | What runs the vectors |
+|---|---|---|
+| `ios` | `swift run --package-path ios AmphoraPathTests` | `UploadPathTests.conformanceVectors()` + `i6NoChunkTempFileVectors()` |
+| `ios` | `Tests/Conformance/drift-control.sh --port swift` | The negative control — a divergence that must go red |
+| `android` | `./gradlew --no-daemon :android:testDebugUnitTest` | `ConformanceVectorsTest.sharedVectorsMatchAndroidPort` + `sharedI6VectorsHoldForTheAndroidTransport` |
+| `android` | `Tests/Conformance/drift-control.sh --port kotlin` | The same negative control, Kotlin side |
+| `conformance-fixture` | `Tests/Conformance/check-single-fixture.sh` | Nothing — it gates the *one file* invariant |
+
+What the vectors do and do **not** prove is written down in
+[Conformance vectors](conformance-vectors.md) — the fields the fixture states but neither port
+reads, the invariants with no vector at all, and the layers out of scope entirely.
+
+Neither port reaches the fixture by a working-directory-relative path. Swift walks up from
+`#filePath`; Kotlin uses the `amphora.repoRoot` system property `android/build.gradle.kts` injects,
+falling back to walking up from `user.dir`. A fixture the runner cannot find used to crash with
+`NSCocoaErrorDomain 260`, which reads as a broken machine rather than as a red test; both ports now
+fail with the list of paths they searched.
+
+### Ran-zero-vectors is a failure
+
+`BUILD SUCCESSFUL` on a task that executed nothing looks exactly like one that executed forty, so
+neither port is allowed to discover its own scope. Each asserts, independently of the fixture:
+
+- `schemaVersion == 2`;
+- exactly **40** vectors, checked *before* the first reduction, so a truncated file fails as
+  "expected 40 vectors, got 18" rather than as whichever unrelated assertion those 18 trip over;
+- exactly **1** non-reducing vector (`row-01-enqueue` — `Enqueue` creates a job rather than
+  reducing one) and therefore exactly **39** rows actually put through `reduce`. Without this last
+  pair a fixture whose rows had all degenerated to `Enqueue` would skip all forty, exercise
+  nothing, and still report green.
+
+- exactly **3** `transportInvariants.i6NoChunkTempFiles` rows, and 3 of them actually executed.
+
+Those numbers live in the tests, not in the fixture, so a fixture rewritten by a generator
+cannot rewrite its own expectations alongside it. Adding a vector means touching both ports; that
+friction is the point.
+
+### One file, no per-platform copy
+
+The whole mechanism depends on both ports reading the same bytes. A second copy — a snapshot under
+`android/src/test/resources/`, a renamed `conformance-snapshot.json` beside the Swift target —
+keeps both suites green while they describe two different state machines, which is precisely the
+drift the fixture was written to catch, made invisible.
+
+`Tests/Conformance/check-single-fixture.sh` is that invariant as a gate rather than a comment. It
+reads the git index (no toolchain, no build) and fails on three things: a second tracked file named
+`vectors.json`; any other tracked `*.json` containing the vector id `row-01-enqueue`, which catches
+a copy that was renamed on the way in; and either port no longer naming
+`Tests/Conformance/vectors.json`, which catches a port quietly repointed at its own fixture without
+deleting anything.
+
+### Drift is proven to be caught, not assumed to be
+
+Both suites green proves the two ports **agree**. It does not prove the suite would **notice** if
+they stopped, and a drift detector nobody has watched detect drift is indistinguishable from one
+that cannot — this repository shipped exactly that for months, forty vectors that ran on Swift
+only.
+
+`Tests/Conformance/drift-control.sh` is the counterfactual, committed as a script rather than
+performed once and written up in prose. It puts a deliberate divergence into ONE port, runs that
+port's vectors, and requires them to go red naming the vector that caught it — twice per port, once
+for the transition table and once for I6, the no-chunk-temp-files commitment that no transition
+vector would notice being violated. Mutations are restored byte for byte on every exit path, and a
+mutation whose anchor has gone missing fails the run instead of passing vacuously. Full table of
+controls: [Conformance vectors §4](conformance-vectors.md#4-the-negative-control).
+
+The Kotlin half only ever runs here. No JDK exists on the machines these stories are written on, so
+CI is the only place the Kotlin vectors have been driven red.
+
 ## A skipped check is not a passing check
 
 `.chief/verify.sh` reports **three** outcomes, not two:
@@ -119,8 +196,22 @@ cannot be re-flattened without turning CI red.
 Two gaps remain, and both are recorded rather than papered over:
 
 - `verify.sh` runs `swift build --package-path ios`; CI runs it with `-Xswiftc -warnings-as-errors`.
-  The `ios` job is currently red on a `Sendable` conformance error that the local command does not
-  surface. Nothing in this repository owns that fix yet.
+  The `ios` job is red on Swift-concurrency errors that the local toolchain does not surface at all,
+  so a green local build does not predict a green run. As observed on run 33041928703, two remain
+  and nothing in this repository owns either:
+
+  | Where | Error |
+  |---|---|
+  | `Governor/NetworkGovernor.swift:23` | reference to captured `var 'self'` in concurrently-executing code |
+  | `Transport/TUSKitTransport.swift:27` | stored property `session` of `Sendable`-conforming struct has non-`Sendable` type `BackgroundSessionManager` |
+
+  A third, the same complaint against `NativeResumableTransport`, was retired by the I6 seam: that
+  transport now stores a `BackgroundUploadStarter`, a wrapper whose `@unchecked Sendable` claim
+  covers exactly one call. That is a narrow assertion about `startUpload`, not the redesign
+  `BackgroundSessionManager` still needs — `TUSKitTransport` holds the same object directly and is
+  still red for it. Because the build fails at that first step, the `ios` job never reaches
+  `swift run` or the Swift drift control; both are run locally instead, and story notes record what
+  they printed.
 - `verify.sh` runs `./gradlew build`; CI runs `:android:assemble` and `:android:testDebugUnitTest`.
 
 A green `verify.sh` therefore does not predict a green run. Check `gh run list` before believing a

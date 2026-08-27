@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": "docs/reference/state-machine.md",
   "vectors": [
     {
@@ -282,5 +282,34 @@
       "event": { "type": "ProcessStart" },
       "expect": { "state": "CANCELED", "noOp": true, "cleanupPending": true }
     }
-  ]
+  ],
+
+  "//": "Below the transition table: the ONE design commitment that is not a state transition. I6 says no chunk temp file outlives a transport attempt, and the default path materialises zero of them — byte ranges stream out of the source. It is stated in README.md, in state-machine.md I6 and in both transports' doc comments, which is exactly why it needed a vector: a claim repeated in four prose locations and checked in none is the kind a well-meaning port quietly violates by staging 'just the remainder'. The consequence is not cosmetic — staging takes peak extra storage from about zero to roughly the size of the file, and reintroduces the class of bug (the OS reclaiming a cache file mid-transfer) that this design exists to retire.",
+  "//scope": "Each port runs these against ITS OWN transport, watching a scratch directory that also holds the source file and is installed as the process temp directory for the duration, so a stray chunk file lands where the check is looking. Swift observes what NativeResumableTransport hands the background session; Kotlin observes what RangeRequestBody streams to the sink. The two are different code, which is the point: the shared row states the property, each port shows its own implementation has it. docs/reference/conformance-vectors.md records what these do and do not prove.",
+  "transportInvariants": {
+    "spec": "docs/reference/state-machine.md §4 I6 — no chunk temp file outlives a transport attempt",
+    "i6NoChunkTempFiles": [
+      {
+        "id": "i6-01-fresh-transfer",
+        "spec": "I6: a transfer starting at byte 0 streams the whole source and stages nothing",
+        "sizeBytes": 65536,
+        "resumeFrom": 0,
+        "expect": { "filesCreatedInWorkDir": 0, "bytesFromSource": 65536, "stagesRemainder": false }
+      },
+      {
+        "id": "i6-02-resume-mid-file",
+        "spec": "I6: the resume path is the one a naive port implements by writing a remainder file",
+        "sizeBytes": 65536,
+        "resumeFrom": 40000,
+        "expect": { "filesCreatedInWorkDir": 0, "bytesFromSource": 25536, "stagesRemainder": false }
+      },
+      {
+        "id": "i6-03-resume-at-last-byte",
+        "spec": "I6: a one-byte remainder is still not worth a file",
+        "sizeBytes": 1024,
+        "resumeFrom": 1023,
+        "expect": { "filesCreatedInWorkDir": 0, "bytesFromSource": 1, "stagesRemainder": false }
+      }
+    ]
+  }
 }
