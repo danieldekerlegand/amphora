@@ -56,6 +56,35 @@ jobs:
         run: ./gradlew --no-daemon --stacktrace :android:assemble
       - name: Run Android conformance vectors
         run: ./gradlew --no-daemon :android:testDebugUnitTest
+      # THE REAL WIRE. Tasklist 80 recorded "both platforms complete an upload against a real tusd
+      # instance" as passing while its own notes said Android Gradle was unavailable and Docker was
+      # unreachable. No JDK exists on the machines these stories are written on, so this runner is
+      # the only place the Kotlin port can be put on a socket — and ubuntu-latest ships Docker, so
+      # there was never a reason it could not be.
+      - name: Start tusd + MinIO
+        run: |
+          docker compose -f integration/tusd/docker-compose.yml up -d
+          # No `-f`: GET on the collection answers 405, which is the server being up, not an error.
+          for _ in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8080/files/ && break; sleep 1; done
+          curl -s -o /dev/null -w 'tusd is up: HTTP %{http_code}\n' http://127.0.0.1:8080/files/
+      - name: Kotlin real-wire upload against tusd
+        env:
+          TUSD_ENDPOINT: http://127.0.0.1:8080/files/
+          # Turns "no endpoint, skipping" into a failure. This step exists to produce evidence, and
+          # a step that can pass without producing any is how the false record got written.
+          AMPHORA_REQUIRE_DOCKER: '1'
+        run: ./gradlew --no-daemon :android:testDebugUnitTest --tests 'dev.amphora.TusdIntegrationTest'
+      # The observation itself, in the log. The step above going green says an upload finished;
+      # this says how many bytes, from which resumed offset, and how much disk it took — which is
+      # what a later reader needs in order to believe it without rerunning it.
+      - name: What crossed the wire
+        if: always()
+        run: |
+          cat android/build/reports/tusd-real-wire.txt \
+            || echo 'NO EVIDENCE LINE — the upload did not reach the end of the test.'
+      - name: Stop tusd + MinIO
+        if: always()
+        run: docker compose -f integration/tusd/docker-compose.yml down -v --remove-orphans
       # The Kotlin half of the same counterfactual, and the half that matters most here: no JDK
       # exists on the machines these stories are written on, so CI is the only place the Kotlin
       # vectors have ever been driven red.

@@ -45,6 +45,24 @@ android {
                 // walking up from the working directory if this property ever goes missing.
                 it.systemProperty("amphora.repoRoot", rootDir.absolutePath)
 
+                // A per-run temp directory instead of the machine's shared /tmp. TusdIntegrationTest
+                // measures peak extra disk under java.io.tmpdir to check invariant I6 (the transport
+                // stages no chunk file), and on a shared /tmp that measurement would be reading other
+                // processes' noise. It is also where the `kotlin / I6 drift` control in
+                // Tests/Conformance/drift-control.sh writes its counterfactual chunk file.
+                val testTmp = layout.buildDirectory.dir("test-tmp").get().asFile
+                it.systemProperty("java.io.tmpdir", testTmp.absolutePath)
+                it.doFirst { testTmp.mkdirs() }
+
+                // The real-wire test is opt-in on TUSD_ENDPOINT and must be able to tell "no server
+                // here" from "the server said no". Forwarded explicitly rather than relied on being
+                // inherited, and declared through `providers` so Gradle treats the value as a build
+                // input instead of silently caching a task that ran with a different one.
+                providers.environmentVariable("TUSD_ENDPOINT").orNull
+                    ?.let { endpoint -> it.environment("TUSD_ENDPOINT", endpoint) }
+                providers.environmentVariable("AMPHORA_REQUIRE_DOCKER").orNull
+                    ?.let { require -> it.environment("AMPHORA_REQUIRE_DOCKER", require) }
+
                 // Print per-test results. `BUILD SUCCESSFUL` on a task that ran zero tests looks
                 // exactly like one that ran forty, and this repo has already merged three stories
                 // on that confusion.
