@@ -18,7 +18,15 @@ cd "$root" || exit 1
 canonical="Tests/Conformance/vectors.json"
 # One vector id, used as a content fingerprint so a copy that was RENAMED on the way in is caught
 # too. Filename matching alone would miss `conformance-vectors.json`.
+#
+# Matched as an `"id": "..."` PAIR, not as a bare string. The looser form had a false positive that
+# turned the gate red on commit de1b5cb: chief's own bookkeeping JSON (`.chief/state/prd.json`,
+# `tasks/chief/*.json`) quotes vector ids in prose when a story's notes describe what this check
+# does. A gate that fails on someone writing about it teaches people to ignore it, which costs more
+# than the narrower pattern does — a reformatted copy still matches, since the whitespace is
+# optional.
 sentinel="row-01-enqueue"
+sentinel_pattern='"id"[[:space:]]*:[[:space:]]*"'"$sentinel"'"'
 failures=0
 
 fail() {
@@ -45,7 +53,7 @@ while IFS= read -r path; do
   [ -n "$path" ] || continue
   [ "$path" = "$canonical" ] && continue
   fail "renamed copy of the fixture at $path (it contains vector id '$sentinel') — one file, no per-platform copy"
-done < <(git grep -l -F "$sentinel" -- '*.json' 2>/dev/null)
+done < <(git grep -l -E "$sentinel_pattern" -- '*.json' 2>/dev/null)
 
 # 3. Both ports still name that exact path. A port that quietly repointed at its own fixture would
 #    pass checks 1 and 2 by deleting nothing.

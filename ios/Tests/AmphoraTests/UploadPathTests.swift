@@ -3,6 +3,9 @@ import Amphora
 
 @main
 struct UploadPathTests {
+    /// The upload-path cases below, counted so the summary line is derived rather than typed.
+    static let pathCases = 4
+
     static func main() async throws {
         try await plainFileUploadRunsCreateAppendCompleteInOrder()
         try await cancelDeletesStagedFile()
@@ -10,13 +13,20 @@ struct UploadPathTests {
         try await remainderAbortsAndCleansUpWhenPressureRises()
         // The conformance vectors are the shared fixture, and a fixture the runner cannot find
         // must fail this suite loudly rather than trap or, worse, be skipped into a green run.
+        let vectors: Int
+        let i6Vectors: Int
         do {
-            try conformanceVectors()
+            vectors = try conformanceVectors()
+            i6Vectors = try await i6NoChunkTempFileVectors()
         } catch {
             FileHandle.standardError.write(Data("Amphora path tests: FAILED — \(error)\n".utf8))
             exit(1)
         }
-        print("Amphora path tests: 44 passed")
+        // Counted, not asserted from memory. A summary line whose number is a literal cannot tell
+        // "the vectors ran" from "the vectors were skipped", which is the failure mode this whole
+        // fixture exists to rule out.
+        print("Amphora path tests: \(pathCases + vectors + i6Vectors) passed "
+            + "(\(pathCases) upload-path cases, \(vectors) state-machine vectors, \(i6Vectors) I6 transport vectors)")
     }
 
     private static func plainFileUploadRunsCreateAppendCompleteInOrder() async throws {

@@ -28,6 +28,11 @@ jobs:
         run: swift build --package-path ios -Xswiftc -warnings-as-errors
       - name: Run Swift path tests
         run: swift run --package-path ios AmphoraPathTests
+      # Green vectors prove the two ports AGREE. They do not prove the suite would NOTICE if they
+      # stopped agreeing. This introduces a divergence into the Swift port on purpose and requires
+      # the vectors to go red — see Tests/Conformance/drift-control.sh.
+      - name: Swift drift negative control
+        run: Tests/Conformance/drift-control.sh --port swift
 
   android:
     runs-on: ubuntu-latest
@@ -50,6 +55,11 @@ jobs:
         run: ./gradlew --no-daemon :android:assemble
       - name: Run Android conformance vectors
         run: ./gradlew --no-daemon :android:testDebugUnitTest
+      # The Kotlin half of the same counterfactual, and the half that matters most here: no JDK
+      # exists on the machines these stories are written on, so CI is the only place the Kotlin
+      # vectors have ever been driven red.
+      - name: Kotlin drift negative control
+        run: Tests/Conformance/drift-control.sh --port kotlin
 
   # The vectors only detect drift while both ports read the SAME bytes. A per-platform copy would
   # leave both suites green while they describe two different state machines — the exact failure

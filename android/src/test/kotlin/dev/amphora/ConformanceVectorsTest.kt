@@ -1,13 +1,18 @@
 package dev.amphora
 
+import dev.amphora.core.SeekableSource
 import dev.amphora.core.UploadStateMachine
 import dev.amphora.model.*
+import dev.amphora.transport.RangeRequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import java.io.File
+import java.nio.file.Files
 
 /**
  * Why the vectors are not loaded by a relative path.
@@ -90,7 +95,7 @@ class ConformanceVectorsTest {
          * by a generator cannot rewrite its own expectations along with it. Adding a vector is
          * meant to require touching both ports; that friction is the point.
          */
-        const val EXPECTED_SCHEMA_VERSION = 1
+        const val EXPECTED_SCHEMA_VERSION = 2
         const val EXPECTED_VECTOR_COUNT = 40
 
         /**
@@ -100,6 +105,13 @@ class ConformanceVectorsTest {
          * degenerated to `Enqueue` would skip all forty, reduce nothing, and still pass.
          */
         const val EXPECTED_UNREDUCED_COUNT = 1
+
+        /**
+         * The I6 rows: "no chunk temp file outlives a transport attempt". Counted for the same
+         * reason as the transition rows — a section trimmed to one row must fail as "expected 3,
+         * got 1" rather than pass as a full I6 run.
+         */
+        const val EXPECTED_I6_VECTOR_COUNT = 3
     }
 
     @Test
@@ -148,6 +160,112 @@ class ConformanceVectorsTest {
             "vectors actually put through UploadStateMachine.reduce — 'ran 0 vectors' is a failure, not a pass",
         )
     }
+
+    /**
+     * I6 is the design claim with the largest consequence and, until these rows, no check at all.
+     * It is stated in README.md, in state-machine.md §4 and in this port's own [TusTransport] doc
+     * comment; a port that quietly stages "just the remainder" satisfies every transition vector in
+     * the fixture while taking peak extra storage from about zero to the size of the file, and
+     * reintroduces the class of bug — the OS reclaiming a cache file mid-transfer — the whole
+     * design exists to retire.
+     *
+     * The rows are shared with Swift; the observation is necessarily port-specific. Here it is what
+     * [RangeRequestBody] streams to its sink: the bytes come straight out of the source file at the
+     * resume offset, and nothing is written to disk. `ConformanceTests.swift` makes the equivalent
+     * observation of what `NativeResumableTransport` hands the background session.
+     */
+    @Test
+    fun sharedI6VectorsHoldForTheAndroidTransport() {
+        val root = ConformanceVectors.load()
+        val section = root.optJSONObject("transportInvariants")
+            ?: throw AssertionError(
+                "conformance vectors at ${ConformanceVectors.file()}: missing `transportInvariants` — " +
+                    "dropping that section would silently drop the only check on the no-chunk-temp-files commitment",
+            )
+        val rows = section.optJSONArray("i6NoChunkTempFiles")
+            ?: throw AssertionError(
+                "conformance vectors at ${ConformanceVectors.file()}: missing `transportInvariants.i6NoChunkTempFiles`",
+            )
+        assertEquals(EXPECTED_I6_VECTOR_COUNT, rows.length(), "I6 vector count in ${ConformanceVectors.file()}")
+
+        var checked = 0
+        for (index in 0 until rows.length()) {
+            runI6Vector(rows.getJSONObject(index))
+            checked++
+        }
+        assertEquals(
+            EXPECTED_I6_VECTOR_COUNT,
+            checked,
+            "I6 vectors actually executed — 'ran 0 vectors' is a failure, not a pass",
+        )
+    }
+
+    private fun runI6Vector(row: JSONObject) {
+        val id = row.getString("id")
+        val sizeBytes = row.getLong("sizeBytes")
+        val resumeFrom = row.getLong("resumeFrom")
+        val expect = row.getJSONObject("expect")
+
+        val scratch = Files.createTempDirectory("amphora-i6").toFile()
+        // Point the JVM's temp directory at the scratch directory for the duration of the attempt.
+        // A remainder file is written either beside the source or "somewhere temporary"; this makes
+        // both land where the inventory below is looking.
+        val previousTmp = System.getProperty("java.io.tmpdir")
+        try {
+            System.setProperty("java.io.tmpdir", scratch.absolutePath)
+
+            val source = File(scratch, "source.bin")
+            source.writeBytes(ByteArray(sizeBytes.toInt()) { (it % 251).toByte() })
+            val expectedBytes = expect.getLong("bytesFromSource")
+
+            val before = inventory(scratch)
+            val streamed = Buffer()
+            SeekableSource.fromFile(source).use { seekable ->
+                val body = RangeRequestBody(
+                    source = seekable,
+                    offset = resumeFrom,
+                    length = sizeBytes - resumeFrom,
+                    contentType = "application/offset+octet-stream".toMediaType(),
+                    deadlineMillis = Long.MAX_VALUE,
+                    now = { 0L },
+                    onProgress = {},
+                )
+                assertEquals(expectedBytes, body.contentLength(), "$id: declared Content-Length")
+                body.writeTo(streamed)
+                assertEquals(expectedBytes, body.bytesWritten, "$id: bytes read out of the source")
+            }
+
+            val created = inventory(scratch) - before
+            assertEquals(
+                expect.getInt("filesCreatedInWorkDir"),
+                created.size,
+                "$id: I6 violated — ${created.size} file(s) materialised during the attempt ($created). " +
+                    "Byte ranges stream from the source; nothing is written to disk.",
+            )
+            assertTrue(
+                !expect.getBoolean("stagesRemainder"),
+                "$id: this fixture row expects a staged remainder, which no port here implements",
+            )
+            assertEquals(expectedBytes, streamed.size, "$id: bytes handed to the sink")
+            // The bytes must be the source's own, at the resume offset — a body that streams the
+            // right COUNT of the wrong bytes is a corrupt upload, not a passing vector.
+            assertTrue(
+                streamed.readByteArray().contentEquals(source.readBytes().copyOfRange(resumeFrom.toInt(), sizeBytes.toInt())),
+                "$id: the streamed window is not source[$resumeFrom, $sizeBytes)",
+            )
+            assertEquals(sizeBytes, source.length(), "$id: the transport must not rewrite or truncate the source")
+        } finally {
+            System.setProperty("java.io.tmpdir", previousTmp)
+            scratch.deleteRecursively()
+        }
+    }
+
+    /** Every path under [directory], relative to it, so the diff names what appeared. */
+    private fun inventory(directory: File): Set<String> =
+        directory.walkTopDown()
+            .filter { it != directory }
+            .map { it.relativeTo(directory).path }
+            .toSet()
 
     private fun job(given: JSONObject): UploadJob = UploadJob(
         id = "vector", sourceKind = SourceKind.FILE, sourceUri = "vector", sizeBytes = given.optLong("sizeBytes", 1000),

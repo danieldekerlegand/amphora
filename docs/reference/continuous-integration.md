@@ -63,16 +63,23 @@ are. Related: [Environmental claim evidence](environment-evidence.md).
 
 ## The conformance vectors run on both ports
 
-`Tests/Conformance/vectors.json` (40 vectors, `schemaVersion` 1) exists for exactly one reason: to
+`Tests/Conformance/vectors.json` (40 transition vectors plus 3 transport vectors, `schemaVersion` 2)
+exists for exactly one reason: to
 stop the Swift and Kotlin state machines drifting apart. A vector suite that runs on one platform
 cannot do that — it provides assurance without verification, which is worse than an acknowledged
 gap. Both ports therefore run in CI, against that one file:
 
 | Job | Step | What runs the vectors |
 |---|---|---|
-| `ios` | `swift run --package-path ios AmphoraPathTests` | `UploadPathTests.conformanceVectors()` |
-| `android` | `./gradlew --no-daemon :android:testDebugUnitTest` | `ConformanceVectorsTest.sharedVectorsMatchAndroidPort` |
+| `ios` | `swift run --package-path ios AmphoraPathTests` | `UploadPathTests.conformanceVectors()` + `i6NoChunkTempFileVectors()` |
+| `ios` | `Tests/Conformance/drift-control.sh --port swift` | The negative control — a divergence that must go red |
+| `android` | `./gradlew --no-daemon :android:testDebugUnitTest` | `ConformanceVectorsTest.sharedVectorsMatchAndroidPort` + `sharedI6VectorsHoldForTheAndroidTransport` |
+| `android` | `Tests/Conformance/drift-control.sh --port kotlin` | The same negative control, Kotlin side |
 | `conformance-fixture` | `Tests/Conformance/check-single-fixture.sh` | Nothing — it gates the *one file* invariant |
+
+What the vectors do and do **not** prove is written down in
+[Conformance vectors](conformance-vectors.md) — the fields the fixture states but neither port
+reads, the invariants with no vector at all, and the layers out of scope entirely.
 
 Neither port reaches the fixture by a working-directory-relative path. Swift walks up from
 `#filePath`; Kotlin uses the `amphora.repoRoot` system property `android/build.gradle.kts` injects,
@@ -85,7 +92,7 @@ fail with the list of paths they searched.
 `BUILD SUCCESSFUL` on a task that executed nothing looks exactly like one that executed forty, so
 neither port is allowed to discover its own scope. Each asserts, independently of the fixture:
 
-- `schemaVersion == 1`;
+- `schemaVersion == 2`;
 - exactly **40** vectors, checked *before* the first reduction, so a truncated file fails as
   "expected 40 vectors, got 18" rather than as whichever unrelated assertion those 18 trip over;
 - exactly **1** non-reducing vector (`row-01-enqueue` — `Enqueue` creates a job rather than
@@ -93,7 +100,9 @@ neither port is allowed to discover its own scope. Each asserts, independently o
   pair a fixture whose rows had all degenerated to `Enqueue` would skip all forty, exercise
   nothing, and still report green.
 
-Those three numbers live in the tests, not in the fixture, so a fixture rewritten by a generator
+- exactly **3** `transportInvariants.i6NoChunkTempFiles` rows, and 3 of them actually executed.
+
+Those numbers live in the tests, not in the fixture, so a fixture rewritten by a generator
 cannot rewrite its own expectations alongside it. Adding a vector means touching both ports; that
 friction is the point.
 
@@ -110,6 +119,24 @@ reads the git index (no toolchain, no build) and fails on three things: a second
 a copy that was renamed on the way in; and either port no longer naming
 `Tests/Conformance/vectors.json`, which catches a port quietly repointed at its own fixture without
 deleting anything.
+
+### Drift is proven to be caught, not assumed to be
+
+Both suites green proves the two ports **agree**. It does not prove the suite would **notice** if
+they stopped, and a drift detector nobody has watched detect drift is indistinguishable from one
+that cannot — this repository shipped exactly that for months, forty vectors that ran on Swift
+only.
+
+`Tests/Conformance/drift-control.sh` is the counterfactual, committed as a script rather than
+performed once and written up in prose. It puts a deliberate divergence into ONE port, runs that
+port's vectors, and requires them to go red naming the vector that caught it — twice per port, once
+for the transition table and once for I6, the no-chunk-temp-files commitment that no transition
+vector would notice being violated. Mutations are restored byte for byte on every exit path, and a
+mutation whose anchor has gone missing fails the run instead of passing vacuously. Full table of
+controls: [Conformance vectors §4](conformance-vectors.md#4-the-negative-control).
+
+The Kotlin half only ever runs here. No JDK exists on the machines these stories are written on, so
+CI is the only place the Kotlin vectors have been driven red.
 
 ## A skipped check is not a passing check
 
