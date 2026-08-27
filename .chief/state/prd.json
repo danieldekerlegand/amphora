@@ -1,45 +1,57 @@
 {
   "project": "amphora",
-  "category": "feature",
-  "branchName": "chief/90-environment-matrix",
-  "description": "**The claims that justify this project's existence are all environmental, and none has been tested in the environment it concerns.** Everything up to `80` runs in a test harness. This tasklist runs it where it actually has to work.\n\nWhat is genuinely being tested, from `docs/reference/platform-constraints.md`:\n\n- **App suspension** — JS does not run while suspended, which is the entire reason the RN surface is a control plane only. Prove a transfer continues while the app is backgrounded.\n- **Process death and relaunch** — the durable registry plus launch reconciler exist for exactly this. *\"Close the app, reopen it, find the upload still there and still cancelable.\"*\n- **Storage reclamation mid-transfer** — the original bug. iOS reclaiming the purgeable `Caches` directory is why staging goes to Application Support.\n- **Android's 6h/24h `dataSync` budget** — a multi-hour upload must survive budget exhaustion by design, not by luck.\n- **iOS 17+ native transport vs the pre-17 fallback** — two transports, and only one of them is exercised on a modern simulator by default.\n- **Network transitions** — wifi to cellular, and loss mid-flight.\n\n**Simulators and emulators do not test most of this.** Background execution budgets, real storage pressure and radio transitions need physical devices. Where a case can only be checked on a device, say so and record the result rather than substituting a simulator run that proves something weaker.",
-  "dependsOn": [
-    "80-integration-against-tusd"
-  ],
+  "category": "fix",
+  "branchName": "chief/100-android-into-ci",
+  "description": "**This repository has no git remote, so CI has never run anywhere and the Kotlin port has never been compiled by anything.** Verified 2026-08-25: `git remote -v` is empty, and `.github/workflows/ci.yml`'s android job has therefore never executed on any machine.\n\nEverything Android-shaped here is consequently **unfalsifiable rather than false**. `android/build.gradle.kts` exists (AGP 8.6.1, Room, WorkManager, OkHttp) and looks right; nobody knows whether it compiles, because there is no JDK, no `gradle` and no `gradlew` wrapper on the development machine either. The Kotlin half of the conformance vectors is in the same position — written, never run.\n\n**This is the tasklist that unblocks the most, by a wide margin.** A remote lights up Kotlin compilation, the Kotlin vector execution that `110` depends on, and roughly five rows of the environment matrix at once.\n\n**Two things to know before wiring CI, learned across the portfolio on 2026-08-25.** First, GitHub Actions minutes are free for PUBLIC repositories and billed for PRIVATE ones, and the account's private-repo Actions are currently blocked — *\"The job was not started because recent account payments have failed or your spending limit needs to be increased.\"* A private amphora would produce a workflow that cannot run, which is the exact failure this batch exists to end. Second, sibling repos are developed by chief, which merges branches into main LOCALLY and pushes main — it never opens a pull request. A workflow triggered only `on: pull_request` never fires under that model; vita's had never run for precisely that reason.\n\nSo: a remote is necessary and not sufficient. Wire the trigger to how the work actually arrives, and prove a run happened.",
   "touches": [
-    "docs/",
-    "ios/",
-    "android/"
+    ".github",
+    "android",
+    "docs"
   ],
-  "iters": 5,
-  "warmup": [],
+  "iters": 6,
+  "warmup": [
+    "git remote -v || echo 'NO REMOTE'",
+    "sed -n '1,40p' .github/workflows/ci.yml",
+    "ls android/ android/build.gradle.kts settings.gradle.kts 2>/dev/null",
+    "command -v java gradle javac || echo 'no JDK/gradle on this machine'",
+    "cat .chief/verify.sh | head -40"
+  ],
   "userStories": [
     {
       "id": "US-1",
-      "title": "A written environment matrix, with each cell's verdict and how it was reached",
-      "description": "The deliverable is the evidence, not a green tick. State which cells needed a physical device.",
+      "title": "The repository has a remote, and the workflow fires on how work actually lands",
       "acceptanceCriteria": [
-        "A matrix document covers OS versions × transport × source type × interruption mode, and is linked from `docs/README.md`.",
-        "Every cell records how it was verified: automated, manual-on-device, or NOT YET VERIFIED.",
-        "Cells that a simulator or emulator cannot honestly cover are marked as such rather than filled with a weaker substitute.",
-        "The iOS 17+ native transport and the pre-17 TUSKit fallback are BOTH exercised."
+        "A git remote exists and `main` is pushed to it. Until this is true, nothing else in this batch can be verified by anything.",
+        "The CI trigger matches how commits arrive here. Work is merged locally by chief and main is pushed, so a `pull_request`-only trigger would never fire — `push` on the default branch is the trigger that matches reality. State the reasoning in the workflow, since a future reader will otherwise 'tidy' it back.",
+        "The visibility choice is made deliberately and recorded: private Actions are billed and the account's private-repo runs are currently blocked, so a private repo here yields a workflow that cannot start. If private is chosen anyway, the workflow must not be treated as a gate until billing is confirmed working.",
+        "Evidence: a run id and its conclusion, quoted in the story notes. 'CI is wired' is not a claim this batch accepts without a run behind it."
       ],
       "passes": true,
-      "notes": "Added docs/reference/environment-matrix.md and linked it from docs/README.md; 10 OS/transport/source rows × 4 interruption cells explicitly record NOT YET VERIFIED physical-device gaps. Swift build green; Amphora path tests 44 passed; TypeScript typecheck passed; Gradle skipped because no Gradle toolchain was available."
+      "notes": "Remote `origin` -> https://github.com/danieldekerlegand/amphora exists and `main` is pushed (git ls-remote origin refs/heads/main = 2a9391713fc96bf5549db82d6625c4c2cbb908f0, identical to local main). Trigger is `push` on `main` + `chief/**`, plus `pull_request` and `workflow_dispatch`, with the reasoning written as a comment block at the top of .github/workflows/ci.yml. Visibility is PUBLIC (gh repo view --json visibility = \"PUBLIC\"), chosen deliberately and recorded in docs/reference/continuous-integration.md along with the consequence if it is ever made private. EVIDENCE OF A REAL RUN: run id 33038526156 (push, chief/100-android-into-ci, head a84c63b), conclusion FAILURE after 2m4s. Per job: react-native SUCCESS (npm ci, check:control-surface, typecheck, build all green); ios FAILURE (swift build -warnings-as-errors: non-Sendable BackgroundSessionManager stored in Sendable structs NativeResumableTransport/TUSKitTransport); android FAILURE (gradle :android:assemble) - the first time Kotlin here was ever handed to a compiler, which is US-2's subject. Local .chief/verify.sh on this branch: PASS Swift build, PASS Swift tests, PASS TypeScript typecheck, SKIPPED Gradle (no toolchain) - 0 failures."
     },
     {
       "id": "US-2",
-      "title": "The four environmental claims are each demonstrated",
-      "description": "Backgrounding, process death, storage reclamation, and the Android dataSync budget.",
+      "title": "Kotlin actually compiles, on a machine that has a toolchain",
       "acceptanceCriteria": [
-        "A transfer continues while the app is backgrounded, on both platforms, evidenced by a captured log or recording.",
-        "An upload survives process death and is resumable AND cancelable after relaunch — the README's stated promise, tested literally.",
-        "Storage reclaimed mid-transfer produces a clean typed failure and no corrupted upload — the original bug, proven retired.",
-        "An Android upload spanning the 6h `dataSync` budget continues correctly across budget exhaustion.",
-        "A wifi-to-cellular transition mid-transfer does not corrupt or restart the upload."
+        "The android job installs a JDK and Android SDK and runs a real Gradle build of `android/`. The first genuine compile of this port is the deliverable.",
+        "Whatever the build surfaces is FIXED or recorded, not hidden. A prior review noted roughly four references to unwritten symbols; expect the compiler to find those and possibly more. A red first build is the expected outcome and is a success for this story.",
+        "A `gradlew` wrapper is committed so the build is reproducible and pinned, rather than depending on whatever gradle a runner happens to have.",
+        "The story notes report what ran and what it said. 'Could not run' and 'ran and passed' are different claims and must not be conflated — that conflation is what produced this repo's three auto-verified merges."
       ],
       "passes": true,
-      "notes": "Added docs/reference/environment-evidence.md and linked it from docs/README.md. Swift build + AmphoraPathTests: green, 44 passed; TypeScript typecheck: green. The evidence ledger records automated protocol/state and typed storage observations plus explicit NOT YET VERIFIED physical-device gaps for background suspension, Android 6h dataSync exhaustion, and Wi-Fi→cellular handoff; Gradle was skipped because no Gradle toolchain was available."
+      "notes": "REAL COMPILE, REAL RUN: run 33039508625 (push, chief/100-android-into-ci, head 09eac78), android job conclusion SUCCESS. `./gradlew --no-daemon :android:assemble` -> BUILD SUCCESSFUL in 1m 46s (54 tasks); `./gradlew --no-daemon :android:testDebugUnitTest` -> BUILD SUCCESSFUL in 26s with ConformanceVectorsTest.sharedVectorsMatchAndroidPort PASSED, StorageGovernorTest.reserveDelegatesToAllocatorBeforeReturningReservation PASSED, TusdIntegrationTest SKIPPED (no TUSD_ENDPOINT). This is the first time Kotlin here has been compiled at all. TOOLCHAIN: the android job already installed temurin 17 + the Android SDK; it now also runs gradle/actions/wrapper-validation@v4 (SUCCESS) before building. WRAPPER: gradle 8.10.2 committed (gradlew, gradlew.bat, gradle/wrapper/*), distributionSha256Sum 31c55713e40233a8303827ceb42ca48a47267a0ad4bab9177123121e71524c26 and wrapper jar sha256 2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046, both matching services.gradle.org's published values; CI calls ./gradlew, not the runner image's ambient gradle (which was 9.7.0). FIVE FAILURES THE COMPILER FOUND, ALL FIXED, NONE HIDDEN: (1) kapt refused every suspend/Flow DAO query - added androidx.room:room-ktx:2.6.1 [run 33038526156]; (2) TusTransport called Call.await() at 4 sites, never written - added transport/CallAwait.kt, an enqueue-based suspendCancellableCoroutine bridge; (3) UploadWorker referenced AmphoraGraph with no import; (4) SourceResolver probed seekability with ParcelFileDescriptor.seekTo(), which does not exist - replaced with Os.lseek(fd, 0, SEEK_SET) [run 33039150462]; (5) CoroutineWorker.onStopped() is final and cannot be overridden - the stop path is cancellation of doWork's coroutine, so the flush+lease release moved into a withContext(NonCancellable) finally [run 33039150462]. Test-harness fixes: testOptions.unitTests.isReturnDefaultValues (mockable android.jar stubs), org.json:json:20240303 (org.json is stubs-only in android.jar), unit-test workingDir = rootDir (both ports read the same repo-root-relative Tests/Conformance/vectors.json), kapt room.schemaLocation (exportSchema=true was exporting nothing), and testLogging events so a run of zero tests cannot look like a run of forty. NOT CONFLATED: local .chief/verify.sh on this branch reports PASS Swift build, PASS Swift tests (44 passed), SKIPPED Gradle (no JDK on this Mac), PASS TypeScript typecheck, 0 failures - the Gradle result above is CI-observed, not locally observed. The overall run 33039508625 conclusion is failure solely because of the pre-existing ios Sendable error recorded under US-1, which no story in this tasklist owns; react-native SUCCESS, android SUCCESS."
+    },
+    {
+      "id": "US-3",
+      "title": "A skipped check can never read as a passing one",
+      "acceptanceCriteria": [
+        "`.chief/verify.sh` currently SKIPS a check whose toolchain is absent and still exits 0 — correct for a developer machine, dangerous as a merge verdict. A skip must be reported distinctly from a pass, and the run summary must name every skipped check.",
+        "In CI, a skip is a FAILURE: the runner installs every toolchain, so a skipped gate there is a bug rather than a courtesy. Encode that difference rather than sharing one policy between the two environments.",
+        "Counterfactual test: with the Android toolchain removed, the local gate reports SKIPPED (not passed) and the CI gate goes red.",
+        "Document the local-vs-CI distinction where a reader will meet it, so the next person does not re-flatten the two."
+      ],
+      "passes": true,
+      "notes": "Local gate on this branch: 3 passed, 1 skipped, 0 failed, exit 0 — \"SKIPPED Gradle build: no JDK on PATH — UNVERIFIED, not passed\"; the summary block \"verify: SKIPPED checks — these did NOT run and are UNVERIFIED:\" NAMES it, and the run ends \"nothing failed, but 1 check(s) never ran. This is NOT a full pass.\" instead of the \"every check ran and passed\" line, which only a fully-executed run can print. THREE OUTCOMES, NOT TWO: verify.sh now reports PASS / FAIL / SKIPPED and counts skips separately. TWO POLICIES, DELIBERATELY DIFFERENT: strict mode (auto-selected by CI=true, overridable in either direction with AMPHORA_VERIFY_STRICT=1/0) turns every skip into a FAIL and exits non-zero; local mode names them and exits 0. COUNTERFACTUAL, RUN IN CI: .chief/tests/verify-skip-policy.sh runs the real verify.sh with an emptied PATH (Android toolchain removed, and the other two with it) and asserts both verdicts. New CI job `verify-policy` runs it — run 33039907367 (push, head cce0732), job 98410902050, conclusion SUCCESS, logging \"case 1 ... | SKIPPED Gradle build: no JDK on PATH\", \"| verify: 0 passed, 4 skipped, 0 failed\", \"| This is NOT a full pass.\" then \"case 2 ... | FAIL Gradle build: SKIPPED (no JDK on PATH)\", \"| verify: 0 passed, 4 skipped, 4 failed\", ending \"verify-skip-policy: all assertions passed\". The test is not vacuous: mutating verify.sh's CI detection to `elif false` locally produced 3 failed assertions (expected non-zero under CI=true, got 0). Run 33039907367 jobs: verify-policy success, android success, react-native success, ios failure — the ios failure is the pre-existing Sendable error recorded under US-1 that no story owns. DOCUMENTED in docs/reference/continuous-integration.md, new section \"A skipped check is not a passing check\" (outcome table, the local-vs-CI split and why they must not share a policy, the counterfactual, and a \"Known divergence\" subsection recording that verify.sh omits -warnings-as-errors and runs `gradlew build` rather than CI's assemble+test), linked from docs/README.md."
     }
   ]
 }

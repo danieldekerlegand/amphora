@@ -3,12 +3,11 @@ package dev.amphora.work
 import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import androidx.work.*
+import dev.amphora.AmphoraGraph
 import dev.amphora.model.*
 import dev.amphora.governor.NetworkPolicy
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -56,19 +55,17 @@ class UploadWorker(
             deps.engine.dispatch(jobId, UploadEvent.Blocked(BlockReason.FGS_QUOTA_EXHAUSTED))
             Result.success()
         } finally {
-            deps.dao.releaseLease(jobId, runnerToken)
-        }
-    }
-
-    /**
-     * Android 15 calls this when the FGS budget expires mid-run. A few seconds to stop cleanly;
-     * failing to is a RemoteServiceException. Persist offset, block the job, get out.
-     */
-    override fun onStopped() {
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            val deps = AmphoraGraph.of(applicationContext)
-            deps.engine.flushOffset(jobId)
-            deps.dao.releaseLease(jobId, runnerToken)
+            // Android 15 stops the worker when the FGS budget expires mid-run, and there are
+            // seconds — not minutes — to stop cleanly before a RemoteServiceException. This is
+            // the stop hook: CoroutineWorker declares onStopped() final and expresses the stop
+            // as cancellation of doWork's coroutine instead. NonCancellable is therefore load
+            // bearing, not decoration — without it both suspending calls below return
+            // immediately on the already-cancelled job, stranding the lease until it expires
+            // and losing the last acked offset.
+            withContext(NonCancellable) {
+                deps.engine.flushOffset(jobId)
+                deps.dao.releaseLease(jobId, runnerToken)
+            }
         }
     }
 

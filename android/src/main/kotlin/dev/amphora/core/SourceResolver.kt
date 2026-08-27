@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import android.system.Os
+import android.system.OsConstants
 import dev.amphora.governor.StorageGovernor
 import dev.amphora.model.SourceKind
 import dev.amphora.model.UploadJob
@@ -64,9 +66,13 @@ class SourceResolver(private val context: Context) {
         val pfd = context.contentResolver.openFileDescriptor(parsed, "r")
             ?: error("cannot open ${job.sourceUri}")
         return try {
-            // Pipes and sockets throw ESPIPE here. This is deliberately a probe, not a URI-scheme
-            // assumption: providers are allowed to expose either kind of descriptor.
-            check(pfd.seekTo(0) >= 0) { "provider returned an invalid seek position" }
+            // Pipes and sockets throw ErrnoException(ESPIPE) here. This is deliberately a probe,
+            // not a URI-scheme assumption: providers are allowed to expose either kind of
+            // descriptor. ParcelFileDescriptor has no seek of its own — lseek(2) on the raw
+            // descriptor is the only way to ask the question.
+            check(Os.lseek(pfd.fileDescriptor, 0L, OsConstants.SEEK_SET) >= 0L) {
+                "provider returned an invalid seek position"
+            }
             SeekableSource.fromDescriptor(pfd)
         } catch (error: Throwable) {
             pfd.close()

@@ -26,6 +26,10 @@ documentation still greps as current.
   source × interruption evidence ledger, including explicit physical-device gaps.
 - [Environmental claim evidence](reference/environment-evidence.md) — observed automated evidence,
   device-only gaps, and commands required to close them.
+- [Continuous integration](reference/continuous-integration.md) — the remote, the deliberate
+  public-visibility decision and its billing reason, and why the workflow triggers on `push`
+  rather than `pull_request`. Also the three-outcome verify policy: why a SKIPPED check is
+  tolerated on a developer machine and fatal in CI, and never reads as a pass in either.
 
 ## Guides
 
