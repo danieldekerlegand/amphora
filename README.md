@@ -119,3 +119,15 @@ cover, is in [Conformance vectors](docs/reference/conformance-vectors.md).
 
 The real-wire tusd v2 + S3 environment and opt-in Swift/Kotlin integration checks live in
 [`docs/guides/tusd-integration.md`](docs/guides/tusd-integration.md).
+
+## Licence
+
+**MIT** — see [`LICENSE`](LICENSE).
+
+Chosen because this is a library meant to be embedded in other people's applications, including
+closed-source ones, so any reciprocal term would be a barrier to the adoption that is the whole
+point. Nothing in the dependency graph pulls a copyleft obligation inward: the iOS target has no
+external dependencies at all, the Android dependencies are Apache-2.0, and the protocol is
+implemented from the IETF draft rather than vendored from anyone. The reasoning, the audit it rests
+on, and the file-level convention (root `LICENSE` plus SPDX in each distributable manifest, no
+per-file headers) are in [Licensing](docs/reference/licensing.md).

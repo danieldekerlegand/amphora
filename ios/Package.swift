@@ -1,4 +1,5 @@
 // swift-tools-version: 5.9
+// SPDX-License-Identifier: MIT
 import PackageDescription
 
 // Amphora's iOS target had NO build manifest, which is why "neither target compiles"

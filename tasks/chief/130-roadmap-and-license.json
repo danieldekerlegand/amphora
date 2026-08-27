@@ -2,7 +2,7 @@
   "project": "amphora",
   "category": "fix",
   "branchName": "chief/130-roadmap-and-license",
-  "description": "**amphora has no `ROADMAP.md`, no `CLAUDE.md`, no `CHANGELOG.md` and — for a library intended for reuse — no `LICENSE`.** It scores 1 of 5 on the portfolio's own documentation standard, the lowest of any repo audited on 2026-08-25.\n\nThe missing LICENSE is the sharpest of these. This is a library whose whole point is to be adopted by other applications, and a repository with no licence grants nothing: a would-be consumer has no permission to use it, and that is true regardless of intent. It also blocks the eventual publish/distribute question entirely.\n\n**The missing ROADMAP matters for a specific reason here.** The repo's central claims are currently unfalsifiable rather than false — the code is real (4,868 lines across both ports, one TODO), the environment docs are exemplary, and yet nothing has moved a byte. A reader has no single place that says so plainly. `docs/reference/environment-matrix.md` and `environment-evidence.md` are the model to follow: every environmental cell honestly reads `NOT YET VERIFIED — physical device`, and they explicitly refuse to substitute simulator results for hardware ones. That discipline should set the tone for the roadmap rather than being buried two directories down.\n\n**`README.md` is also five tasklists stale** (last touched `c04fefd`): it still asserts *\"Nothing moves bytes yet\"* — currently true — alongside *\"No conformance vectors yet\"*, which is false, and lists as *Stubbed* work that `60`/`70` closed.\n\nDeliberately LAST in this batch. A roadmap written before `100`–`120` run would describe intentions; written after, it describes a measured position.",
+  "description": "**amphora has no `ROADMAP.md`, no `CLAUDE.md`, no `CHANGELOG.md` and \u2014 for a library intended for reuse \u2014 no `LICENSE`.** It scores 1 of 5 on the portfolio's own documentation standard, the lowest of any repo audited on 2026-08-25.\n\nThe missing LICENSE is the sharpest of these. This is a library whose whole point is to be adopted by other applications, and a repository with no licence grants nothing: a would-be consumer has no permission to use it, and that is true regardless of intent. It also blocks the eventual publish/distribute question entirely.\n\n**The missing ROADMAP matters for a specific reason here.** The repo's central claims are currently unfalsifiable rather than false \u2014 the code is real (4,868 lines across both ports, one TODO), the environment docs are exemplary, and yet nothing has moved a byte. A reader has no single place that says so plainly. `docs/reference/environment-matrix.md` and `environment-evidence.md` are the model to follow: every environmental cell honestly reads `NOT YET VERIFIED \u2014 physical device`, and they explicitly refuse to substitute simulator results for hardware ones. That discipline should set the tone for the roadmap rather than being buried two directories down.\n\n**`README.md` is also five tasklists stale** (last touched `c04fefd`): it still asserts *\"Nothing moves bytes yet\"* \u2014 currently true \u2014 alongside *\"No conformance vectors yet\"*, which is false, and lists as *Stubbed* work that `60`/`70` closed.\n\nDeliberately LAST in this batch. A roadmap written before `100`\u2013`120` run would describe intentions; written after, it describes a measured position.",
   "dependsOn": [
     "100-android-into-ci",
     "110-vectors-run-on-both-ports",
@@ -26,21 +26,21 @@
       "title": "The repository grants permission to use it",
       "acceptanceCriteria": [
         "A `LICENSE` file exists, chosen deliberately rather than by default, with the choice's reasoning recorded. This is a client library meant to be embedded in other applications, so the licence directly determines who may adopt it.",
-        "The choice accounts for what the repo depends on and what it deliberately does not vendor — the wire protocol is `draft-ietf-httpbis-resumable-upload` against tusd, and the web path uses `tus-js-client` unmodified, so nothing here re-specifies a protocol or carries a copyleft obligation inward. Verify that rather than assuming it.",
+        "The choice accounts for what the repo depends on and what it deliberately does not vendor \u2014 the wire protocol is `draft-ietf-httpbis-resumable-upload` against tusd, and the web path uses `tus-js-client` unmodified, so nothing here re-specifies a protocol or carries a copyleft obligation inward. Verify that rather than assuming it.",
         "SPDX headers or a stated file-level convention, consistent with how sibling repos in this portfolio express licence posture."
       ],
-      "passes": false,
-      "notes": null
+      "passes": true,
+      "notes": "LICENSE (MIT) added at root; reasoning + dependency audit recorded in docs/reference/licensing.md. Choice verified, not assumed: iOS has zero external deps (ios/Package.swift); Android runtime deps all Apache-2.0 read from POM <licenses> on Google Maven / Maven Central; junit 4.13.2 EPL-1.0 and org.json 20240303 Public Domain are testImplementation only (org.json POM confirmed the 'Good, not Evil' clause is absent); tus-js-client and TUSKit are NOT dependencies of this repo at all (prose only); tusd v2.4.0 MIT, and MinIO \u2014 the one AGPL-3.0 component \u2014 is an unmodified upstream container in the integration harness, never linked or distributed, so nothing travels inward. package-lock.json license fields across all 498 transitive dev packages: 426 MIT, 38 ISC, 12 BSD-3, 11 Apache-2.0, 6 BSD-2, 2 0BSD, 1 CC-BY-4.0, 1 (MIT OR CC0-1.0), 1 (BSD-3-Clause OR GPL-2.0) dual \u2014 zero unilateral copyleft. File-level convention stated: root LICENSE authoritative, SPDX-License-Identifier in each distributable manifest (package.json already declared MIT; added SPDX comments to ios/Package.swift and android/build.gradle.kts), no per-file headers. Verify: Swift build PASS, Swift tests PASS (46 passed), TypeScript typecheck PASS, 0 failed; Gradle build SKIPPED (no JDK on this machine) so the android/build.gradle.kts edit is unverified locally and runs in CI."
     },
     {
       "id": "US-2",
       "title": "A roadmap that states the measured position, not the intended one",
       "acceptanceCriteria": [
-        "`ROADMAP.md` opens with where this actually is, in the register `docs/reference/environment-matrix.md` already uses — honest cells, no substitution of a simulator result for a hardware one.",
+        "`ROADMAP.md` opens with where this actually is, in the register `docs/reference/environment-matrix.md` already uses \u2014 honest cells, no substitution of a simulator result for a hardware one.",
         "Phases are named for what remains: making the gate total, making the vectors binding, repairing the real-wire environment, closing the ~40 `NOT YET VERIFIED` device cells, the storage governor under genuine pressure (the original `TransferUtility` bug reproduced then shown retired), host adoption via the RN TurboModule, and publication.",
         "Non-goals are stated: no web transfer code, no re-specification of the protocol, no chunk temp files. The third is a design commitment worth protecting in writing, since it is the one a future contributor is most likely to 'optimise' away.",
         "Open decisions are listed, including the placeholder name and whether device evidence can ever be automated.",
-        "The roadmap reflects what `100`–`120` MEASURED. If any of those reported UNVERIFIABLE HERE, the roadmap says so rather than rounding it up."
+        "The roadmap reflects what `100`\u2013`120` MEASURED. If any of those reported UNVERIFIABLE HERE, the roadmap says so rather than rounding it up."
       ],
       "passes": false,
       "notes": null
@@ -49,10 +49,10 @@
       "id": "US-3",
       "title": "README stops contradicting the tree",
       "acceptanceCriteria": [
-        "The claims that no conformance vectors exist and that work is Stubbed are corrected — `Tests/Conformance/vectors.json` holds 40 vectors and `60`/`70` closed the stubs.",
+        "The claims that no conformance vectors exist and that work is Stubbed are corrected \u2014 `Tests/Conformance/vectors.json` holds 40 vectors and `60`/`70` closed the stubs.",
         "'Nothing moves bytes yet' is updated to whatever `120` established, in either direction. If bytes still have not moved, it stays and says why.",
         "A `CLAUDE.md` is added covering what a session working here needs: the no-chunk-temp-files commitment, the local-skip vs CI-fail gate distinction, that `ios/Package.swift` declares tests as an `.executableTarget` so `swift test` reports 'no tests found' while `swift run AmphoraPathTests` passes, and the adopt-the-protocol/build-the-clients boundary.",
-        "A `CHANGELOG.md` is started. It is missing in every repo audited, so this is the portfolio's most-ignored standard and there is no point pretending otherwise — start it here because this repo is about to publish."
+        "A `CHANGELOG.md` is started. It is missing in every repo audited, so this is the portfolio's most-ignored standard and there is no point pretending otherwise \u2014 start it here because this repo is about to publish."
       ],
       "passes": false,
       "notes": null
