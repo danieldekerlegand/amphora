@@ -132,3 +132,66 @@ us without a commit here.
   - `Reconciler.liveWorkJobIds()` calls `getWorkInfosByTag("amphora-job")`, but `UploadWorker`
     tags work as `"amphora-job:$jobId"`. The tag never matches, so reconciliation adopts nothing
     and will restart work that is already running.
+
+---
+
+## US-3 — A skipped check can never read as a passing one
+
+`.chief/verify.sh` reported two outcomes and exited 0 when a toolchain was missing, so a run
+that compiled nothing was indistinguishable from a run that compiled everything. It now reports
+three, and the two environments disagree about skips on purpose.
+
+**Files changed.** `.chief/verify.sh`; `.chief/tests/verify-skip-policy.sh` (new);
+`.github/workflows/ci.yml` (new `verify-policy` job); `docs/reference/continuous-integration.md`
+(new section "A skipped check is not a passing check"); `docs/README.md`.
+
+### The policy
+
+- `PASS` / `FAIL` / **`SKIPPED`** — and skips are counted separately and **named** in the summary
+  (`verify: SKIPPED checks — these did NOT run and are UNVERIFIED:`), because "3 skipped" does not
+  tell you that *Android* is the one nobody compiled.
+- Any run with a skip in it ends `nothing failed, but N check(s) never ran. This is NOT a full
+  pass.` The line `every check ran and passed` is now reachable only by a fully-executed run.
+- **Local:** skip is tolerated, exit 0. **Strict (CI):** skip is a `FAIL`, exit 1. Selected by
+  `CI=true` (GitHub Actions sets it); `AMPHORA_VERIFY_STRICT=1/0` overrides either way.
+
+### Evidence
+
+Local gate on this branch: `3 passed, 1 skipped, 0 failed`, exit 0 — the skip is `Gradle build —
+no JDK on PATH`, named in the roster.
+
+`.chief/tests/verify-skip-policy.sh` runs the *real* verify.sh with an **emptied PATH** — the
+"Android toolchain removed" counterfactual, plus the other two for free, at zero build cost
+because nothing can run — and asserts case 1 (local: SKIPPED, never PASS, exit 0, all four skips
+named, no "every check ran and passed"), case 2 (`CI=true`: FAIL, non-zero, no bare SKIPPED line),
+case 3 (the override works in both directions).
+
+**Run 33039907367** (push, head `cce0732`), job `verify-policy` **success** —
+`| SKIPPED Gradle build: no JDK on PATH` / `| verify: 0 passed, 4 skipped, 0 failed` /
+`| This is NOT a full pass.` then `| FAIL Gradle build: SKIPPED (no JDK on PATH)` /
+`| verify: 0 passed, 4 skipped, 4 failed`, ending
+`verify-skip-policy: all assertions passed`. Jobs: `verify-policy` success, `android` success,
+`react-native` success, `ios` **failure** — still the Sendable error US-1 recorded, which no
+story in this tasklist owns.
+
+The test is **not vacuous**: mutating verify.sh's CI detection to `elif false` locally produced
+3 failed assertions ("expected a non-zero exit under CI=true, got 0").
+
+### Learnings for future iterations
+
+- **`verify.sh` is still not identical to CI**, and that is now written down in
+  `docs/reference/continuous-integration.md` under "Known divergence" rather than left as folklore:
+  verify.sh omits `-Xswiftc -warnings-as-errors` (which is why the `ios` red is invisible locally)
+  and runs `./gradlew build` where CI runs `:android:assemble` + `:android:testDebugUnitTest`.
+  A green verify.sh does not predict a green run — check `gh run list`.
+- **The counterfactual is cheap because an empty PATH skips everything.** `env -i PATH=$(mktemp -d)`
+  gives a hermetic "no toolchain" machine in milliseconds; no need to uninstall anything or to
+  reach for a container.
+- **Bash here is 3.2** (macOS `/usr/bin/env bash`). Avoid arrays under `set -u`; the skip roster is
+  a newline-accumulated string for exactly that reason.
+- **`$?` after `out="$(cmd)"`** is the command's status, which is what makes the two-verdict
+  assertions readable. Capturing through a pipe to `tail` loses it — check the exit separately.
+- **The `ios` Sendable failure is now the only red job on this branch** and it belongs to no story
+  here. Whoever picks it up: `BackgroundSessionManager` is a `public final class: NSObject` with no
+  `Sendable` conformance, stored in the `Sendable`-conforming structs `NativeResumableTransport`
+  and `TUSKitTransport`.
