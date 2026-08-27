@@ -41,6 +41,14 @@ android {
                 // resolve. Point the runner at the root rather than forking a second copy of the
                 // fixture, which is exactly the drift the vectors exist to catch.
                 it.workingDir = rootDir
+
+                // Print per-test results. `BUILD SUCCESSFUL` on a task that ran zero tests looks
+                // exactly like one that ran forty, and this repo has already merged three stories
+                // on that confusion.
+                it.testLogging {
+                    events("passed", "skipped", "failed")
+                    showStandardStreams = false
+                }
             }
         }
     }
