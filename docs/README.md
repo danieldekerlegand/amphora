@@ -1,6 +1,6 @@
 # Amphora documentation
 
-> **Status:** Draft · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 Every document in this repository is linked from here. Unlinked is unreachable, and unreachable
 documentation still greps as current.
@@ -51,6 +51,11 @@ documentation still greps as current.
   dependency audit behind that choice (including the one AGPL component in the test harness and why
   nothing travels inward from it), and the file-level convention: root `LICENSE` plus SPDX in each
   distributable manifest, no per-file headers.
+- [Dead-code inventory](reference/dead-code-inventory.md) — the candidate list a human approves
+  before anything is deleted: nine reproducible searches and their scopes, six genuinely-dead
+  findings, eight things that fail a static search and are nonetheless load-bearing (ten Room
+  `@TypeConverter`s among them), three intra-port duplications ranked by what drift would cost, and
+  the four classes of thing a static search over this tree cannot see.
 - [The verification record](reference/verification-record.md) — the rule that a story may not be
   marked passing on work its own notes record as not having run, what breaking it cost this
   repository at tasklist `80`, and what an evidence-bearing note has to contain.
