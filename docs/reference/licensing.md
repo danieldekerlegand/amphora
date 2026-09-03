@@ -1,6 +1,6 @@
 # Licensing — the choice, and what it was checked against
 
-> **Status:** Live · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 Amphora is **MIT**. The licence text is at [`LICENSE`](../../LICENSE).
 
@@ -56,7 +56,7 @@ insofar as an obligation might travel inward, and none does.
 | Scope | Dependency | Licence | Read from |
 | --- | --- | --- | --- |
 | iOS runtime | *(none)* | — | `ios/Package.swift` declares zero external packages; only the system `sqlite3` is linked. |
-| Android runtime | `androidx.annotation`, `androidx.core:core-ktx`, `androidx.room:room-runtime`, `androidx.room:room-ktx`, `androidx.work:work-runtime-ktx` | Apache-2.0 | POM `<licenses>` on Google Maven |
+| Android runtime | `androidx.annotation`, `androidx.room:room-runtime`, `androidx.room:room-ktx`, `androidx.work:work-runtime-ktx` | Apache-2.0 | POM `<licenses>` on Google Maven, read against the `dependencies` block of `android/build.gradle.kts` |
 | Android runtime | `kotlinx-coroutines-android` 1.8.1, `okhttp` 4.12.0 | Apache-2.0 | POM `<licenses>` on Maven Central |
 | Android build-time | `androidx.room:room-compiler` (kapt) | Apache-2.0; BSD | POM `<licenses>`. Annotation processor — runs at build time, ships nothing. |
 | Android test-only | `junit` 4.13.2 | EPL-1.0 | POM `<licenses>`. **Weak copyleft, and the only reason it is harmless is that it is `testImplementation`** — not on any consumer's classpath. |
@@ -82,7 +82,7 @@ inherits nothing from the dev tree above.
      since SwiftPM and Gradle have no equivalent field for a non-published package.
 3. **New source files inherit the root licence silently.** Do not add per-file headers.
 
-Point 3 is the deliberate part. Per-file headers on 5,951 lines across two ports buy nothing that
+Point 3 is the deliberate part. Per-file headers on 5,907 lines across two ports buy nothing that
 the root `LICENSE` and the manifest identifiers do not already provide, while adding a line to every
 file that must be kept consistent and that will eventually drift — a repository with headers on 80%
 of its files is *less* legible about its licence than one with none. The place a machine looks is
@@ -94,3 +94,20 @@ the manifest, and the manifests are covered.
   organisation, the holder line in `LICENSE` needs updating, and that is the only place it appears.
 - **The project name is still a placeholder** (see [`ROADMAP.md`](../../ROADMAP.md)). A rename does
   not affect the licence, but it does affect the npm scope `@amphora/react-native`.
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** Two figures in this document were read against
+the tree and did not survive it.
+
+- **`androidx.core:core-ktx` was listed as a declared Android runtime dependency. It is not one.**
+  The declaration was deleted in `6d16ac7` by the dead-code sweep (`dead-code-inventory.md` §1.4)
+  because nothing in the module imports `androidx.core`. It is still on the resolved classpath as a
+  transitive dependency of `work-runtime-ktx`, and still Apache-2.0, so **the licence conclusion
+  does not change** — but the audit's claim to have been read off `android/build.gradle.kts` did,
+  and an audit that names a dependency the manifest no longer declares is one nobody can reproduce.
+  The row now names the four `androidx` artifacts the `dependencies` block actually declares.
+- **The line count was `5,951`; it is now `5,907`.** Re-measured with
+  `git ls-files 'ios/**/*.swift' 'android/**/*.kt' | xargs wc -l`. The argument does not turn on the
+  number, but a number nobody can reproduce is worse than no number, so the command is now stated
+  beside it.

@@ -1,6 +1,6 @@
 # Upload state machine
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 The transfer core is one state machine, specified here once and implemented three times
 (Swift, Kotlin, and — for the web — as a thin adapter over `tus-js-client`). Platform code
@@ -44,9 +44,22 @@ lost when they are collapsed into a single `paused` flag with a reason string:
 - `RETRY_WAIT` resumes automatically at a **deadline**, and its attempt counter feeds the
   transition to `FAILED`.
 
-`BLOCKED` carries a `blockReason`: `NETWORK_UNAVAILABLE` · `NETWORK_DISALLOWED` (metered
-network, policy forbids) · `STORAGE_LOW` · `POWER_LOW` · `FGS_QUOTA_EXHAUSTED` (Android only,
-see `platform-constraints.md` §2) · `CONCURRENCY_LIMIT`.
+`BLOCKED` carries a `blockReason`. Four are shared; two are platform-specific, and neither port
+declares the other's:
+
+| `blockReason` | Kotlin | Swift |
+|---|---|---|
+| `NETWORK_UNAVAILABLE` | yes | yes |
+| `NETWORK_DISALLOWED` (metered network, policy forbids) | yes | yes |
+| `STORAGE_LOW` | yes | yes |
+| `POWER_LOW` | yes | yes |
+| `CONCURRENCY_LIMIT` | yes | yes |
+| `FGS_QUOTA_EXHAUSTED` — Android only, see `platform-constraints.md` §2 | yes | — |
+| `REMAINDER_STAGING_DENIED` — iOS only, pre-17 background resume needed a staged remainder and the reservation was refused; see `ios-background-transfer.md` §4 | — | yes |
+
+Read from `dev.amphora.model.BlockReason` and `Amphora.BlockReason` on 2026-09-03. A reason one
+port cannot produce is still worth naming here, because the registry column is shared and a
+reader joining rows across platforms will meet both.
 
 `EXPIRED` is deliberately **not** folded into `FAILED`. It is recoverable — from offset zero,
 if the source still exists — and the UI affordance ("restart this upload") differs from the
@@ -96,7 +109,7 @@ Formally, as `(state, event) → state'`:
 | `UPLOADING` | `OffsetAdvanced(n)` | `UPLOADING` | persist `serverOffset` on ack only |
 | `UPLOADING` | `TransportComplete` | `FINALIZING` | — |
 | `UPLOADING` | `TransportError(retryable)` | `RETRY_WAIT` | `attemptCount++`, compute `nextAttemptAt` |
-| `UPLOADING` | `NetworkLost` \| `StorageLow` \| `PowerLow` | `BLOCKED(reason)` | abort attempt, keep record |
+| `UPLOADING` | `Blocked(reason)` | `BLOCKED(reason)` | abort attempt, keep record |
 | `UPLOADING` | `Pause` | `PAUSED` | abort attempt, keep record |
 | `UPLOADING` | `Gone(404\|410)` | `EXPIRED` | clear `uploadUrl`, release reservation |
 | `UPLOADING` | `OffsetDiverged(server < local)` | `EXPIRED` | see I7 |
@@ -118,26 +131,50 @@ on an unexpected event is a state machine that loses uploads in the field.
 
 ## 3. Events
 
+This is the closed set, read from `dev.amphora.model.UploadEvent` and `Amphora.UploadEvent` on
+2026-09-03. Both ports declare the same members in the same three groups, and every one of the 21
+names below appears as an `event.type` in `Tests/Conformance/vectors.json` — the set below and the
+set the fixture drives are the same set.
+
 **Commands** (from the host app, always valid to issue, may be no-ops)
-`Enqueue` · `Pause` · `Resume` · `Cancel` · `Retry` · `SetPriority`
+`Enqueue` · `Schedule` · `Pause` · `Resume` · `Cancel` · `Retry`
 
-**Transport signals** (from the platform transfer layer)
-`RemoteCreated` · `OffsetAdvanced` · `TransportComplete` · `ServerAck` · `TransportError{class}` ·
-`Gone` · `OffsetDiverged`
+`Enqueue` is the one command that is not an input to `reduce`: it *creates* the row rather than
+transitioning one, which is why exactly one vector (`row-01-enqueue`) is non-reducing and both
+ports assert that count. `Schedule` is the scheduler picking the row up afterwards.
 
-**Environment signals** (from the governors)
-`NetworkAvailable{metered, constrained, expensive}` · `NetworkLost` · `StorageLow{freeBytes}` ·
-`StorageOk` · `PowerLow` · `FgsQuotaExhausted` · `ProcessStart`
+**Transport signals** (from the source resolver and the transfer layer)
+`SourceResolved{sizeBytes, fingerprint, stagedPath?}` · `SourceMissing` ·
+`RemoteCreated{uploadUrl, expiresAt?}` · `OffsetAdvanced{serverOffset}` · `TransportComplete` ·
+`ServerAck` · `TransportError{class, detail?}` · `Gone` · `OffsetDiverged{serverOffset}`
 
-`TransportError` classes, because the retry policy hangs off them:
+**Environment signals** (from the governors and the scheduler)
+`Blocked{reason}` · `GateCleared` · `SpaceDenied{needed}` · `DeadlineReached` ·
+`AttemptsExhausted` · `ProcessStart`
+
+The environment group is deliberately **reason-carrying rather than cause-named**: the governors
+decide *whether* a gate is shut and name it in `BlockReason`; the state machine only needs
+`Blocked` and `GateCleared`. A per-cause event set (`NetworkLost`, `StorageLow`, `PowerLow`,
+`StorageOk`, `FgsQuotaExhausted`) would put the same taxonomy in two places — `BlockReason` and the
+event enum — where they can disagree, and would force every new gate to touch `reduce`.
+
+`TransportError` classes, because the retry policy hangs off them. Seven, not five —
+`ErrorClass` in both ports:
 
 | Class | Examples | Policy |
 |---|---|---|
 | `TRANSIENT` | connection reset, timeout, network switch, 5xx, 429 | retry with backoff; **does not** count toward the fatal threshold if the offset advanced |
 | `AUTH` | 401, 403, expired signature | one silent refresh attempt via the token provider, then `FAILED(AUTH)` |
 | `PROTOCOL` | 409 offset conflict, 460 checksum mismatch | re-`HEAD`, resume from server truth, count as an attempt |
-| `FATAL` | 413 too large, 400 malformed, unsupported version | `FAILED` immediately, no retry |
-| `LOCAL` | source unreadable, disk full mid-write | `BLOCKED` or `FAILED` depending on recoverability |
+| `PROTOCOL_VERSION` | 412 — an unpinned or unsupported `Tus-Resumable` / interop version | `FAILED`. Never an implicit fallback to a non-resumable upload; see `wire-protocol.md` |
+| `FATAL` | 413 too large, 400 malformed | `FAILED` immediately, no retry |
+| `LOCAL` | disk full mid-write; on iOS, a refused remainder-staging reservation | `BLOCKED(STORAGE_LOW)`. Always blocked, never failed — it is a gate, not a defect |
+| `SOURCE_GONE` | the source file or asset no longer resolves | `FAILED(SOURCE_GONE)` — the §2 `PREPARING`+`SourceMissing` row |
+
+The `.http(code)` → class mapping is written **once**, in `HTTPStatus.classify`; it used to be
+restated verbatim in `TransportError.errorClass` and was collapsed in `afabf05`
+([dead-code-removal.md](dead-code-removal.md)). Nothing in the fixture asserts the classification —
+see [conformance-vectors.md §3.1](conformance-vectors.md#31-fields-the-fixture-states-and-neither-port-reads).
 
 Note the "does not count if the offset advanced" rule. Without it, a 4 GB upload on a flaky
 train Wi-Fi exhausts its retry budget while making steady forward progress — which is the
@@ -204,3 +241,35 @@ always issuable. If the device is offline at cancel time, the job moves to `CANC
 
 Server-side backstop, since tusd will not do this for you: an S3 lifecycle rule with
 `AbortIncompleteMultipartUpload` bounds the cost of terminations that never arrive.
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** §3 was written before either port existed and
+had never been read back against one. Four things it said were not true of the code, and because
+this file is the *normative* home for behaviour, each was a claim a reader had no reason to doubt.
+Read from `dev.amphora.model.UploadEvent` / `UploadJob.kt` and `Amphora.UploadEvent` /
+`UploadJob.swift`, cross-checked against the 21 `event.type` values in
+`Tests/Conformance/vectors.json`.
+
+| §3 said | The tree says | Resolution |
+|---|---|---|
+| `SetPriority` is a command | No such event in either port. Priority is a field on `UploadPolicy`, set at enqueue, never an event | Removed. `Schedule` — which *is* an event, drives `PENDING`→`PREPARING`, and appears in §2 — was missing and is now listed |
+| Environment signals are `NetworkAvailable`, `NetworkLost`, `StorageLow`, `StorageOk`, `PowerLow`, `FgsQuotaExhausted` | Five of those six do not exist. Both ports carry `Blocked{reason}` / `GateCleared`, with the cause in `BlockReason` | Replaced with the implemented set, and the design reason is now stated rather than left to look like an oversight. §2's `UPLOADING` row named the same three phantom events and now names `Blocked(reason)` |
+| Transport signals begin at `RemoteCreated` | `SourceResolved` and `SourceMissing` are transport-group events in both ports, and §2 already had rows for both | Added |
+| Five `TransportError` classes | Seven. `SOURCE_GONE` and `PROTOCOL_VERSION` were missing — and §2 line for `PREPARING`+`SourceMissing` was already spelling `FAILED(SOURCE_GONE)`, so the document contradicted itself | Added, with the `412` mapping read off `HTTPStatus.classify` |
+
+Two smaller ones in the same pass:
+
+- **`LOCAL` was documented as "`BLOCKED` or `FAILED` depending on recoverability".** Neither port
+  branches: `UploadStateMachine.swift:212` and `UploadStateMachine.kt:181` both return
+  `BLOCKED(STORAGE_LOW)` unconditionally. The doc offered a discretion the code does not have.
+- **§1's `blockReason` list was the Kotlin enum.** Swift declares `REMAINDER_STAGING_DENIED` and
+  not `FGS_QUOTA_EXHAUSTED`; the list is now per-port, because the column is shared.
+
+**What this pass did not do.** It did not change any transition, any port, or any vector — the two
+ports already agreed with each other and with the fixture, and this document was the outlier. It
+also did not verify that §2's table is *complete* with respect to `reduce`; every row in it was
+checked to exist, but a transition the code implements and this table omits would not have been
+caught by reading in this direction.

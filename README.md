@@ -91,7 +91,9 @@ interruption rather than a simulated one:
   client from server offset 6553600, checksum verified.
 - **The no-chunk-temp-files claim is now measured, not read off the source.** Peak extra disk during
   an 8 MiB transfer: **4 KiB** (Swift) and **0 KiB** (Kotlin). A remainder-staging transport would
-  have needed roughly 2816 KiB.
+  have needed roughly 2816 KiB. The sampling method behind those numbers, and the run that printed
+  them, are in
+  [the tusd guide](docs/guides/tusd-integration.md#the-storage-claim-is-measured-not-asserted).
 
 Before that date this repository had never moved a byte, and for a week it said otherwise: tasklist
 `80` recorded a live-run story as passing while its own notes said the Docker daemon was

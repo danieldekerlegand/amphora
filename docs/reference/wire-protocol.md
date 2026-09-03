@@ -1,12 +1,12 @@
 # Wire protocol
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 Two dialects, one transport interface. They are **not** cosmetic variants of each other — header
 names, content types, and expiry semantics all differ — so the seam is explicit rather than a set
 of conditionals sprinkled through the transport.
 
-| | **tus 1.0** (`Tus10`) | **RUFH** (`Rufh`, draft-11) |
+| | **tus 1.0** — Swift `Tus10Dialect`, Kotlin `WireDialect.Tus10` | **RUFH** (draft-11) — Swift `RufhDialect`, Kotlin `WireDialect.Rufh` |
 |---|---|---|
 | Version header | `Tus-Resumable: 1.0.0` on every request/response | `Upload-Draft-Interop-Version: <n>` |
 | Create | `POST` + `Upload-Length`, `Upload-Metadata` | `POST` + `Upload-Complete: ?1`, `Upload-Length` |
@@ -62,3 +62,24 @@ arrived per job:
 Verify the actual version pair against your deployed tusd before shipping, and treat
 `nativeResumeUnavailable` as a metric worth alerting on — a tusd upgrade can flip an entire
 install base into non-resumable mode with no error anywhere.
+
+The RUFH interop version is pinned to `8` in one constant per port —
+`TusProtocol.interopVersion` (Swift) and `TusTransport.INTEROP_VERSION` (Kotlin) — and a server
+answering with an unsupported one is `FAILED(PROTOCOL_VERSION)`, never a silent fallback. See
+[state-machine.md §3](state-machine.md).
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** The dialect table was checked header by header
+against `ios/Sources/Amphora/Transport/WireDialect.swift` and
+`android/src/main/kotlin/dev/amphora/transport/WireDialect.kt`, and it holds — including the two
+details most likely to be wrong from memory, `application/partial-upload` as the RUFH append
+content type and `Upload-Complete` (not `Upload-Incomplete`) as the RUFH completeness header. Two
+other documents were carrying `Upload-Incomplete` and have been corrected against this one.
+
+One correction here: **the table named the dialects `Tus10` and `Rufh`, which is the Kotlin
+spelling only.** Swift's types are `Tus10Dialect` and `RufhDialect`. A reader grepping the Swift
+sources for `Rufh` would have found the type, but one grepping for `` `Rufh` `` as written would
+have concluded the ports disagreed. Both spellings are now given.

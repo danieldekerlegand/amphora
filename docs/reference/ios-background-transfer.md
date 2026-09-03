@@ -1,6 +1,6 @@
 # iOS background transfer
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 iOS is the platform where the OS does the most for us and permits the least improvisation.
 Everything below follows from one fact: **the transfer is run by a system daemon, not by our
@@ -60,7 +60,7 @@ start to replace it.
 | Peak extra storage | **0** | up to 1× remaining bytes |
 | Interrupt behaviour | resumes at offset | pre-17 OS retries **from the beginning** |
 
-On iOS 17+, `URLSession` negotiates support via `Upload-Incomplete`, handles the `104 Upload
+On iOS 17+, `URLSession` negotiates support via `Upload-Complete`, handles the `104 Upload
 Resumption Supported` handshake, and on a background session resumes across interruptions with no
 app code running. `cancelByProducingResumeData()` gives a resume blob for explicit pause; a failed
 upload can carry one in `URLError.uploadTaskResumeData`, which we persist **before** reporting the
@@ -91,10 +91,13 @@ exists precisely because staged files under storage pressure are what corrupted 
 - Offset zero is special-cased: the original file *is* the body, so a first attempt costs nothing.
 
 **The decision this hands you.** Setting the deployment target to **iOS 17** deletes
-`TUSKitTransport`, the remainder-staging path, `BlockReason.remainderStagingDenied`, and the TUSKit
-dependency outright — and with them the only iOS code path that can still be defeated by low
-storage. iOS 17 shipped in September 2023. Unless the host app must support iOS 16, taking that
-target is the single highest-leverage simplification available in this repository.
+`TUSKitTransport`, the remainder-staging path, and `BlockReason.remainderStagingDenied` outright —
+and with them the only iOS code path that can still be defeated by low storage. It deletes no
+*dependency*: despite the name, `TUSKitTransport` does not import TUSKit and `ios/Package.swift`
+declares no external packages at all. The name records the role the file plays, and the ~40 lines
+of `Tus10Dialect` are what replaced the library. iOS 17 shipped in September 2023. Unless the host
+app must support iOS 16, taking that target is the single highest-leverage simplification available
+in this repository — and it has an ADR slot reserved, `0002-ios-deployment-target.md`.
 
 ---
 
@@ -140,3 +143,28 @@ nothing is testable.
 **No `UIBackgroundModes` entry is required.** Background `URLSession` transfers are run by a
 system daemon, not by app background execution. Adding `fetch` or `processing` and concluding they
 are what makes uploads work is a common and misleading misconfiguration.
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** Read against
+`ios/Sources/Amphora/Session/BackgroundSessionManager.swift`,
+`ios/Sources/Amphora/Transport/WireDialect.swift`, `TUSKitTransport.swift` and `Package.swift`.
+§1, §2, §5 and §6 all held — including the two that are easy to get backwards: the session really
+is forced into existence in `init` (`_ = session`, not left lazy), and `isDiscretionary` really is
+`false` under `#if DEBUG` and `true` otherwise.
+
+Two did not:
+
+- **§3 said iOS 17 negotiates support via `Upload-Incomplete`. The header is `Upload-Complete`.**
+  `Upload-Incomplete` is the spelling from an early revision of the draft; interop version 8, which
+  this repository pins, uses `Upload-Complete: ?1` / `?0`. Both dialects send it
+  (`WireDialect.swift:81`, `WireDialect.kt:71,77`), `wire-protocol.md` documents it correctly, and
+  `NativeResumableTransport.swift:42` says `Upload-Complete` in its own doc comment. This file and
+  [platform-constraints.md §1](platform-constraints.md) were the last two places carrying the old
+  name; both are fixed.
+- **§4 said moving to iOS 17 would delete "the TUSKit dependency".** There is no TUSKit dependency
+  and there never was one in this tree — [licensing.md](licensing.md) states it explicitly under
+  *Adopted, not vendored*, and `Package.swift` declares zero external packages. Two documents, one
+  fact, disagreeing; the licensing audit is the one that was read off the manifest, so it wins.

@@ -1,268 +1,213 @@
-# Chief Progress — 900-dead-code-paydown
-Started: Thu Sep  3 05:27:52 CDT 2026
+# Chief Progress — 901-docs-tell-the-truth
+Started: Thu Sep  3 05:55:44 CDT 2026
 ---
 
 ## Codebase Patterns
 
-- **`verify.sh` local baseline is `3 passed, 1 skipped, 0 failed`.** The skip is
-  `Gradle build — no JDK on PATH`. Per CLAUDE.md §3 that is NOT green: every Kotlin claim
-  in a change rests entirely on CI. Say "3 passed, 1 skipped" in notes, never "green",
-  unless the change touched no Kotlin (then say so explicitly).
-- **Four cheap CI gates run locally with no toolchain** and are worth running on any change:
-  `Tests/Conformance/check-single-fixture.sh`, `.chief/tests/verify-skip-policy.sh`,
-  `npm --prefix packages/react-native run check:control-surface`,
-  `Tests/Conformance/drift-control.sh --port swift`. The kotlin drift control needs a JDK.
-- **Every new doc must be indexed in `docs/README.md`** ("unlinked is unreachable") and carry a
-  `> **Status:** … · **Updated:** … · **Owner:** …` line. Bump the index's own Updated date too.
-- **Reference-counting recipe used all through 900**, reusable for any symbol sweep:
-  `grep -rhoE '(struct|class|enum|protocol|actor) [A-Z][A-Za-z0-9_]*' ios/Sources | awk '{print $2}' | sort -u`
-  then per name `grep -rn --include='*.swift' -w <name> ios/ | grep -v '<decl form>' | wc -l`.
-  Kotlin equivalent over `android/src`. Refcount 0 or 1 is the shortlist, not the answer.
-- **A zero refcount is NOT reachability, and in this repo it is usually not even evidence.**
-  Six ways they come apart, all present: external consumers (the entire public API of both ports
-  reports zero — `AmphoraUploader` is referenced nowhere outside its own file), Room/kapt codegen,
-  framework dispatch, reflection *inside libraries* this tree merely feeds, **symbols bound by
-  string** (`BlockReason.powerLow`: zero refs in both ports, live via `vectors.json`), and **edges
-  that only exist across a process boundary** (`taskDescription`, the reconciler adopt path). Before
-  believing a zero, grep the *fixture* and the *docs* for the value's spelling, not just its symbol.
-  Full register: `docs/reference/dead-code-undecidable.md`.
-- **Verify a proposed deletion by performing it, then reverting.** Comment the symbol out, run
-  `swift build` and `swift run --package-path ios AmphoraPathTests`, restore, confirm `git status`
-  is clean. Costs ~10s and converts a prediction into an observation — which is what this repo's
-  docs require anyway. Note a clean *build* proves nothing here; the suite is where it dies.
-- **GitHub anchor slugs drop `—` in place, without inserting a space:** `foo — bar` → `foo--bar`.
-  A link checker that substitutes a space instead reports every cross-doc link in `docs/reference/`
-  as broken. Test any such checker against a link known to work before trusting its output.
+- **Link checking here needs a GitHub-accurate slugifier.** Headings in this tree are full of
+  spaced em dashes (`## 1. Where this actually is — 2026-08-27`). GitHub drops the em dash and maps
+  *each remaining space to its own hyphen*, producing `...is--2026-08-27`. A slugifier that collapses
+  `\s+` to one hyphen reports 25 false positives across these docs. Correct recipe: lowercase, strip
+  backticks, unwrap `[text](url)` to `text`, delete everything not `\w`/space/hyphen, then
+  `.strip().replace(' ', '-')`. Skip fenced code blocks when collecting headings.
+- **The banner regex.** `head -5 "$f" | grep -q '^> \*\*Status:\*\*.*\*\*Updated:\*\*.*\*\*Owner:\*\*'`
+  — the banner is always line 3, a blockquote, immediately after the `# Title` and a blank line.
+- **`verify.sh` exits 0 on a skip.** Never read exit 0 as green. Read the summary line. On these
+  machines the skip is always `Gradle build — no JDK on PATH` and failures are always `0`; the
+  passed count is `3` or `4` depending on whether `packages/react-native/node_modules` exists
+  (`TypeScript dependency install` is conditional on its absence). Quote the line you saw.
 
 ---
 
-## 2026-09-03 — US-1: An inventory, measured before anything is removed
+## US-1 — Every document is reachable, banner-stamped, and in the right place (done)
 
-WHAT I DID. Swept the whole tree for dead, stale and duplicated code and wrote the result to
-`docs/reference/dead-code-inventory.md` (289 lines), indexed in `docs/README.md`. **Deleted
-nothing** — US-1 is the measurement, US-2 is the removal.
+**Measured first, then fixed.** The PRD's headline ("1 of 14 docs carry no banner") was directionally
+right but the denominator is 17 files under `docs/` (1 index + 2 guides + 14 reference), and there
+were three defects, not one:
 
-FILES CHANGED: `docs/reference/dead-code-inventory.md` (new), `docs/README.md` (index entry +
-Updated date). Commit `08fe3b0`.
+| Defect | Before | After |
+| --- | --- | --- |
+| Dead file links | 0 / 22 files | 0 |
+| Dead anchors | 0 | 0 |
+| `docs/` files with no banner | 1 (`docs/guides/tusd-integration.md`) | 0 |
+| Docs not linked from `docs/README.md` | 2 | 0 |
+| Directories outside the standard's seven | 1 (`android/`, holding `BUILD.md`) | 0 |
 
-VERIFY: `.chief/verify.sh` → 3 passed, 1 skipped, 0 failed (PASS Swift build, PASS Swift tests
-46 passed, PASS TypeScript typecheck, SKIPPED Gradle — no JDK). Plus all four cheap CI gates
-green. Docs-only, no Kotlin touched, so the Gradle skip strands nothing here.
+Files changed:
+- `docs/guides/tusd-integration.md` — banner added, `Status: Live`.
+- `android/BUILD.md` → `docs/reference/android-build.md` (`git mv`) — banner added plus an italic
+  dated note recording the move and the old path. `grep -rn "BUILD\.md"` over the whole tree
+  (not just markdown — CI yaml and shell too) found **zero** references, so nothing needed
+  repointing.
+- `docs/README.md` — indexed both; added a `## Layout` section that records the conformance check
+  as a table and states explicitly that there are **no declared directory exceptions**, because the
+  one violation was fixed rather than excepted.
 
-THE SHAPE OF THE ANSWER — 6 genuinely dead, 8 deliberately-unexercised, 3 duplications,
-4 undecidable classes. Full detail is in the doc; what matters for the next iterations:
+**Gate:** `.chief/verify.sh` → `4 passed, 1 skipped, 0 failed`, exit 0. Skip = `Gradle build — no
+JDK on PATH`. Per CLAUDE.md §3 this is **not** green; it is unverified for Android. This story moved
+one Android-adjacent *document* and touched no Kotlin, so the skip conceals nothing about it.
 
-**US-2 should start from §1 and expect it to shrink.** The six §1 findings are NOT equal:
-- `loadResumeData` (§1.1) is the only one with a real cost attached, and it comes with a trap:
-  the *write* half (`storeResumeData`, called at `DefaultUploadEngine.swift:298`) is live and
-  leaks disk into a `resume_data` table nothing reads. Do NOT delete the writer to make the
-  pair symmetric — that is a defect to report, not code to remove.
-- `WireDialect.Rufh` Kotlin (§1.3) is dead by search and **contested by `wire-protocol.md`**,
-  which documents it as one of two named dialects. Swift's `RufhDialect` is live. This needs a
-  human ruling; do not delete it on the strength of a refcount.
-- §1.4/§1.5/§1.6 are Kotlin and **cannot be verified on this machine at all** (no JDK). Any
-  removal there is a CI-only claim. Weigh that against how little they are worth.
-- §1.6 (three redundant `@RequiresApi`) is marginal and strands `androidx.annotation` if fully
-  removed. Probably leave it; record why, which is what US-2's third criterion asks for.
+### Learnings for future iterations
 
-**§2 is the more valuable half of the artifact** and is exactly what stops the next sweep
-re-litigating the same files. Read it before touching anything that looks unused. The
-headline: ten `EnumConverters` `@TypeConverter` methods report **zero** call sites each and
-the module cannot compile without them — kapt writes the calls, and kapt runs nowhere here.
-
-**§3.1 is the finding with real teeth.** The six-arm HTTP-status→`ErrorClass` table is written
-out verbatim twice in Swift (`BackgroundSessionManager.swift:212-223` and
-`ControlPlaneClient.swift:124-132`), read on two different paths, and covered by no vector. A
-change to one copy ships a build that retries `429` on HEAD and gives up on it mid-transfer
-with every test still green. If US-2 does one refactor, do this one.
-
-LEARNINGS FOR FUTURE ITERATIONS.
-- **The tree is disciplined; do not expect a big harvest.** Zero commented-out code blocks in
-  any source language, zero unused Swift imports, one TODO — and that TODO names future work
-  rather than hiding an abandoned path. The findings are small and specific by nature.
-- **A zero refcount answers a different question than "is this dead".** Three of the four
-  blind spots in §4 actually occur here (kapt codegen, framework dispatch, external
-  consumers); only reflection does not. Every framework callback in the tree —
-  `urlSession(...)`, `onAvailable`/`onLost`/`onCapabilitiesChanged`, `onResponse`/`onFailure`,
-  `doWork` — reports zero call sites and is mandatory.
-- **Cross-port asymmetry is the strongest dead signal available in this repo**, and it cuts
-  both ways. `inState` is Kotlin-only and uncalled → stray. `renewLease`/`pruneCompleted` are
-  uncalled in *both* ports → a specified surface, not an accident. And Swift's
-  `stageIfRequired` is uncalled while its Kotlin twin IS called → the **caller** is missing,
-  which is port drift, not dead code.
-- **A REAL BUG FOUND, out of scope here, worth a tasklist.** `DefaultUploadEngine.swift:178-253`
-  never calls `sources.stageIfRequired(job)`, so a `ph://` job hands
-  `URL(fileURLWithPath: "ph://...")` straight to the background session. Kotlin does call its
-  twin at `DefaultUploadEngine.kt:217`. The iOS Photos-asset path is broken.
-- **A second live gap.** `nativeResumeUnavailable` (`DefaultUploadEngine.swift:28`) is never
-  inserted into and never read; the whole five-file `noteNativeResumeSupported` chain is a
-  no-op. `wire-protocol.md:57-63` specifies the behaviour it should implement — the silent
-  degradation to non-resumable upload that the doc calls "a metric worth alerting on".
-- **FOR THE 901 DOCS TASKLIST:** `docs/guides/tusd-integration.md` exists and is **not indexed
-  in `docs/README.md`**, whose own rule is "unlinked is unreachable". Left alone deliberately —
-  900's brief says do not fix docs beyond what a removal strands.
-- Research doc: none for this tasklist (`research` not set). The map above is the substitute.
+- **`docs/reference/android-build.md` is stamped `Draft`, not `Live`, on purpose — US-2 owes it a
+  correction.** It tells the reader to run `gradle :android:assemble`. The repo has a checked-in
+  wrapper, and `gradle/wrapper/gradle-wrapper.properties` opens with a comment explaining that bare
+  `gradle` uses whatever the runner image ships (9.7.0 on 2026-08-27) and is therefore not
+  reproducible. Everything else in that file checks out against `android/build.gradle.kts`:
+  `minSdk 26`, `targetSdk 35`, `compileSdk 35`, JDK 17 — and against the root `build.gradle.kts`:
+  AGP 8.6.1, Kotlin 2.0.21, wrapper Gradle 8.10.2. The "authoring machine has no JDK" claim is
+  still true and still verifiable by running the gate.
+- **US-2 already has one confirmed drift target (above) and should start from the tree, not the
+  docs.** The cheap sweep for the rest: grep every backticked path and command out of `docs/**` and
+  test each against the filesystem, then check the vector counts (40 / 39 / 1 / 3) and the two I6
+  disk numbers (4 KiB Swift / 0 KiB Kotlin) against `Tests/Conformance/` and both ports' test code.
+- **US-3 will need `docs/archive/` to exist**, and git cannot commit an empty directory — it will
+  come into being with the first archived document, or not at all. If nothing turns out to warrant
+  archiving, say that in the record rather than creating a placeholder.
+- **The three dead-code docs cross-reference each other by anchor heavily** (`dead-code-inventory`,
+  `-removal`, `-undecidable`: 25 inter-document anchor links). Renaming any heading in those three
+  breaks links silently. Re-run the anchor check after touching them.
 
 ---
 
-## 2026-09-03 — US-2: Removal, with the tree still green and the reason recorded
+## US-2 — Content that describes a tree that moved (done)
 
-WHAT I DID. Acted on the US-1 inventory in **four commits, one finding each**, then wrote the
-disposition record. Four removals went in; **three of the six §1 "genuinely dead" candidates did
-not**, and one of those three did not because *the inventory's own evidence for it was wrong*.
+**Method: read the tree, then read the docs against it.** Not the reverse. Four mechanical sweeps
+first (backticked paths → filesystem; backticked `CamelCase` identifiers → git-tracked sources;
+every stated count → the fixture and both test files; the four things tasklist `900` removed →
+grep), then a human read of the three docs the sweeps cannot reach (the state-machine spec, the
+registry schema, the two platform docs).
 
-FILES CHANGED
-- `ios/Sources/Amphora/Transport/ControlPlaneClient.swift`, `Session/BackgroundSessionManager.swift`
-  — `afabf05`, the §3.1 dedupe.
-- `android/src/main/kotlin/dev/amphora/store/UploadDao.kt` — `ac91b10`, `inState` + its stranded
-  `UploadState` import.
-- `android/src/main/kotlin/dev/amphora/work/UploadNotifications.kt` — `9edd129`, the `SDK_INT >= O`
-  guard.
-- `android/build.gradle.kts` — `6d16ac7`, the `core-ktx` declaration.
-- `docs/reference/dead-code-removal.md` (new), `docs/reference/dead-code-inventory.md` (disposition
-  markers), `docs/README.md`, `CHANGELOG.md` — `5bed8ac`.
+**10 drifted claims across 8 reference docs.** In severity order:
 
-VERIFY. `.chief/verify.sh` after every commit: **3 passed, 1 skipped, 0 failed** (PASS Swift build,
-PASS Swift tests 46 passed, PASS TypeScript typecheck, SKIPPED Gradle — no JDK). All four cheap CI
-gates green on the final tree. **Three of the four removals are Kotlin and rest entirely on CI** —
-that is written into the commit messages, the removal record §4, and the CHANGELOG entries.
-**No test was deleted, weakened or adjusted.** The suite runs the same 46 cases before and after.
+| Doc | Was | Is |
+| --- | --- | --- |
+| `state-machine.md` §3 | `SetPriority` + 5 phantom environment signals; 5 error classes; no `Schedule`/`SourceResolved`/`SourceMissing` | The implemented 21-name event set; 7 classes |
+| `persistence-and-recovery.md` §2 | `metadata`, `policy`, `allowedNetworks`, a `sourceKind` domain neither port has, no `remoteTerminated`, an `upload_event` ring | Real field names; both `sourceKind` domains; the ring moved out of the schema and labelled unimplemented |
+| `ios-background-transfer.md`, `platform-constraints.md` | `Upload-Incomplete`; "the TUSKit dependency" | `Upload-Complete`; `TUSKitTransport` is this repo's own file, TUSKit is not a dependency |
+| `platform-constraints.md` §4 | tusd v2.10.0 | The Compose digest pin (v2.4.0) is the authority |
+| `conformance-vectors.md` §4, §5 | "three" concurrency errors; `EXPECTED_VECTOR_COUNT` in both ports | Links to the one home; both spellings named |
+| `android-build.md` | `gradle :android:assemble` | `./gradlew`, with the wrapper pin and why |
+| `licensing.md` | `androidx.core:core-ktx` declared; 5,951 lines | Four `androidx` artifacts; 5,907, with the command |
+| `state-machine.md` §1, §3 | Kotlin's `BlockReason`; `LOCAL` → "`BLOCKED` or `FAILED`" | Per-port table; `LOCAL` → always `BLOCKED(STORAGE_LOW)` |
 
-THE FINDING THAT MATTERS MOST FOR 901 AND BEYOND — **US-1's §1.1 corroboration row was false.**
-It claimed `grep -rn "resume_data\|resumeData\|ResumeData" docs/ Tests/ packages/ integration/`
-"returns nothing". Re-run verbatim it returns **four lines**: `ios-background-transfer.md:65-66`
-("we persist the blob **before** reporting the error, since its presence means 'resumable' rather
-than 'start over'") and `platform-constraints.md:21-22`, which names the consumer
-`uploadTask(withResumeData:)`. `loadResumeData` is therefore the unimplemented **read** half of a
-specified iOS 17 capability — the same shape as §2.4's `nativeResumeUnavailable` chain — and belongs
-in §2. It was NOT removed. The disk leak §1.1 flagged is real and unchanged: the fix is to implement
-the reader, not to delete it.
+**Three facts stated twice and actually disagreeing** — the criterion's real target, and all three
+were live contradictions, not merely redundancy: the `ios` job's concurrency-error count (3 vs 2;
+CI run `33044503283` says 2), the pinned tusd version (v2.10.0 vs v2.4.0), and whether TUSKit is a
+dependency (`ios-background-transfer.md` said yes, `licensing.md` said no; `Package.swift` says no).
+Each now has one home with the others pointing at it. The I6 disk numbers and the three-outcome
+verify table are also stated in more than one place, but they *agree*; those got pointers to their
+home rather than deletion, because `README.md` and `CLAUDE.md` exist to be read first.
 
-**Why that grep result was wrong is worth knowing:** `uploadTaskResumeData` contains the substring
-`ResumeData`, so the pattern *should* have hit. The claim was recorded, not run. That is the single
-most dangerous failure mode in this tasklist — a search that is *quoted* rather than executed reads
-exactly like one that was.
+**What held.** Worth recording, because a sweep that only reports defects reads as if everything
+else was unchecked: 40/39/1/3 vector counts; all 16 per-key row counts in `conformance-vectors.md`
+§3.1, re-derived from the fixture; 46 Swift cases; the 4 KiB / 0 KiB I6 measurements and the 256 KiB
+budget, 50 ms / 25 ms sampling behind them; the 5 CI jobs, 4 triggers and 3 skip-policy assertions;
+every `AmphoraUploader` signature in the iOS guide; the whole `wire-protocol.md` dialect table.
 
-ALSO NOT REMOVED, both recorded in the removal record with reasons:
-- `WireDialect.Rufh` (Kotlin). `wire-protocol.md:5-9` — "Two dialects, one transport interface" with
-  a column-per-dialect table naming `Rufh`, written to span both ports; Swift's `RufhDialect` is
-  live. Deleting the Kotlin half turns a specification into a lie. Needs a decision: implement the
-  construction site, or amend the doc to say RUFH is iOS-only.
-- The three `@RequiresApi(O)`. True documentation, and the only thing keeping `androidx.annotation`
-  on the classpath.
-- Duplications §3.2 (two Swift transports) and §3.3 (`.offsetAdvanced`) deferred: the first crosses
-  the seam I6's three transport vectors watch and the transports' *difference* IS I6; the second is
-  state-machine policy pinned by all 40 vectors.
+Files changed: 8 under `docs/reference/`, plus `CLAUDE.md` (I6 + verify-table pointers, and a new
+convention bullet in §6), `README.md` (I6 pointer), `CHANGELOG.md` (a `#### Fixed` block under
+2026-09-03).
 
-LEARNINGS FOR FUTURE ITERATIONS.
-- **Re-run the search before you act on a quoted one.** Two of six §1 rows survived contact with
-  their own evidence; one of them because the evidence was never executed. Checking all six cost
-  minutes. Deleting `loadResumeData` would have erased the only in-code trace of a documented iOS 17
-  capability, and nobody re-reads a deleted file.
-- **"Specified but unimplemented" and "dead" look identical to grep and are opposites.** The
-  discriminator is always a *document*, never a refcount. Both survivors in this pass were resolved
-  by reading `docs/reference/`, not by counting references. When a symbol's zero-caller status is
-  the whole case for deletion, grep the docs for the *mechanism* it implements, not just its name.
-- **A correction to a prior story's artifact belongs IN that artifact, struck through.** The
-  inventory's §1.1 rows are struck through in place with the correction beside them, not silently
-  rewritten — matching how CHANGELOG.md handles tasklist `80`. A rewritten artifact loses the record
-  that the method can fail this way.
-- **One commit per finding is cheap here and worth it.** Each of the four is a few lines; the value
-  is that the three CI-only Kotlin ones can be reverted individually if CI disagrees, without
-  touching the one change that was actually verified locally.
-- **Kotlin markdown/table gotcha, mechanical:** inserting a paragraph directly above a Markdown table
-  with no blank line between silently stops the table rendering. Bit me once in the inventory.
+**Gate:** `.chief/verify.sh` → `3 passed, 1 skipped, 0 failed`, exit 0. Swift build PASS, Swift
+tests PASS (`46 passed`), TypeScript typecheck PASS. The skip is `Gradle build — no JDK on PATH`.
+Per CLAUDE.md §3 this is **not** green. Also `Tests/Conformance/check-single-fixture.sh` exit 0, and
+the link sweep re-run after every edit: 22 files, 0 dead links, 0 dead anchors, 17/17 banners.
 
-STILL OPEN FOR 901 (unchanged from US-1, restated so it is not lost): `docs/guides/tusd-integration.md`
-is not indexed in `docs/README.md`. And two live defects found by this sweep and deliberately NOT
-fixed here: `DefaultUploadEngine.swift` never calls `stageIfRequired` (iOS `ph://` path broken, Kotlin
-does call its twin), and the `resume_data` table is written and never read.
+### Learnings for future iterations
+
+- **`verify.sh` prints `3 passed, 1 skipped` here, not `4`.** The Codebase Patterns note above says
+  4; that is only true when `packages/react-native/node_modules` is absent, because
+  `TypeScript dependency install` is conditional on it. Both are `0 failed`. Read the summary line,
+  not a remembered number.
+- **The mechanical sweeps found almost nothing; the reading found everything.** Every path, every
+  identifier, and every count in the docs already resolved. All 10 defects were *semantic* — a name
+  that exists but means something else, a set that is missing a member, a version that is real but
+  not the one pinned. A link checker would have reported this tree clean. Do not let a green
+  automated sweep stand in for reading a spec against a type declaration.
+- **`docs/reference/state-machine.md` is normative and had never been read back against a port.**
+  Where a doc claims to be the specification, the drift is worse than ordinary staleness, because a
+  reader has no reason to doubt it and the ports agreeing with *each other* hides it completely.
+  The fixture is not a check on this doc: it encodes the ports' behaviour, so the doc can be wrong
+  while all 40 vectors pass. That is what happened.
+- **`## Corrections` sections are now a convention** (CLAUDE.md §6). Nine docs carry one. Each also
+  states what its pass did *not* check — US-3 owes the same for the sweep as a whole.
+- **US-3's archive question, answered in advance: nothing here warranted archiving.** Every doc read
+  in this pass is current and load-bearing; the three dead-code docs look historical but are the
+  record of a decision, which this portfolio keeps deliberately. `docs/archive/` still does not
+  exist and git cannot commit it empty — US-3 should say that rather than create a placeholder.
+- **Two ADR slots are named and unfilled** — `0001-adopt-rufh-build-clients.md` and
+  `0002-ios-deployment-target.md`, both cited from `docs/README.md` and now also from
+  `ios-background-transfer.md` §4. They are *declared outstanding*, not dead links; leave them.
 
 ---
 
-## 2026-09-03 — US-3: What the sweep could not decide
+## US-3 — Archived, not deleted — and the record says why (done)
 
-WHAT I DID. Wrote the third and last artifact, `docs/reference/dead-code-undecidable.md` (~270
-lines), indexed in `docs/README.md` and cross-linked from both prior artifacts. **Removed nothing** —
-the register IS the deliverable. Also corrected inventory §4 in place (struck through, US-2's
-precedent) because working the tree candidate-by-candidate showed it was incomplete and, in one
-place, misleading.
+**The archive decision was made against evidence, not asserted.** US-2's note predicted "nothing here
+warranted archiving"; that prediction was re-derived rather than inherited, because a prediction is
+not a finding.
 
-FILES CHANGED: `docs/reference/dead-code-undecidable.md` (new), `dead-code-inventory.md` (§0, §4,
-§4.4, §5 annotated), `dead-code-removal.md` (pointer), `docs/README.md` (index + inventory entry
-corrected), `CHANGELOG.md` (Added + Changed). Commit `fc1ae5a`.
+| Question | Command | Answer |
+| --- | --- | --- |
+| Has any markdown ever been deleted here? | `git log --all --diff-filter=D --format= --name-only -- '*.md'` | **0 rows**, across all 100 commits since `bb9f613` (2026-08-20) |
+| Any renames? | `git log --all --diff-filter=R --name-status -- '*.md'` | One: US-1's own `android/BUILD.md` → `docs/reference/android-build.md` |
 
-VERIFY: `.chief/verify.sh` → 3 passed, 1 skipped, 0 failed (SKIPPED Gradle — no JDK). Four cheap CI
-gates green. Docs-only; `git status` confirms nothing under `ios/ android/ packages/` differs from
-HEAD, including after the control experiment below.
+So the archive-not-delete rule was not merely obeyed in this pass — there is no prior deletion for it
+to have caught. `docs/archive/` **still does not exist and was deliberately not created**: git cannot
+track an empty directory, and inventing a placeholder to fill a layout row is the same move as filling
+an unverified matrix cell with a simulator result. `docs/README.md`'s Layout table now says so and
+points at the evidence.
 
-**SIX BLIND-SPOT CLASSES, NOT FOUR.** The inventory's §4 was written as a closing disclaimer and it
-under-counted. Reading each class as a candidate list instead of a category found two more, and both
-occur here — §1.5 string-keyed decoding, §1.6 cross-process reachability.
+**The real work turned out to be two documents US-2 missed.** Both `environment-evidence.md` and
+`environment-matrix.md` were still stamped `2026-08-20` — they are the only two `docs/reference/`
+files US-2 did not read, and the banner date is what gave them away. Both were wrong:
 
-LEARNINGS FOR FUTURE ITERATIONS.
+- `environment-evidence.md`: "`UploadWorker` flushes the acknowledged offset from `onStopped()`".
+  It cannot. `CoroutineWorker` declares `onStopped()` **final**; the class expresses the stop as
+  cancellation of `doWork` and flushes from a `finally` block under `withContext(NonCancellable)`.
+  The class's own comment says this in so many words. Same file *under*-claimed the Swift harness —
+  "a fresh client", when it `kill(getpid(), SIGKILL)`s and resumes in a genuinely separate process
+  whose exit status `137` the driver asserts on.
+- `environment-matrix.md`: "The selector in `AmphoraUploader`…". There is no `#available` check
+  anywhere in `AmphoraUploader.swift`. It is `TransportSelector.select` in
+  `Transport/UploadTransport.swift`, and it picks the *dialect* along with the transport — a
+  consequence the old sentence lost.
+- The device-recording field list was stated in both files in slightly different words. They
+  **agreed**, which is the duplication that survives review; one home now, in the matrix.
 
-- **The headline, and it recontextualises the whole tasklist:** applied honestly to the top of this
-  library, S1/S3 report **the entire public API of both ports as dead**. `grep -rn AmphoraUploader
-  ios/` returns two lines, both inside the file that declares it. `configure` and
-  `handleBackgroundEvents` — the two call sites `ios-host-integration.md` labels *"Not optional"* —
-  return one line each, their own declaration. The searches that produced the inventory, pointed at
-  the one type this library exists to expose, would delete the library. **Any future refcount sweep
-  here must state that up front**, or it is measuring how much of the tree is a library rather than
-  how much is dead.
+Files changed: `docs/reference/environment-evidence.md`, `docs/reference/environment-matrix.md`
+(both with dated `## Corrections` + a "what this pass did not check" paragraph),
+**new** `docs/reference/documentation-record.md`, `docs/README.md` (index + Layout `archive/` row),
+`CHANGELOG.md`.
 
-- **NEW CLASS, and it caught a real near-miss: symbols bound by string, not by reference.**
-  `BlockReason.powerLow` has **zero** references in **both** ports — by US-1's own reasoning
-  (cross-port symmetry, the signal that condemned `WireDialect.Rufh`) the strongest dead signal this
-  repo offers. It is live. One of the 40 vectors, `row-14-power-low`, reaches it by raw-value decode.
-  **I verified this by running the deletion, not by reasoning about it:** `swift build` →
-  `Build complete!` (compiles clean, nothing references it), then `swift run AmphoraPathTests` →
-  `ConformanceTests.swift:165: Fatal error: Unexpectedly found nil`. Restored; 46 passed. Do this.
-  The whole tasklist's most expensive lesson is that a quoted search reads exactly like an executed
-  one, and the same is true of a predicted build result.
+**Gate:** `.chief/verify.sh` → `3 passed, 1 skipped, 0 failed`, exit 0. Swift build PASS, Swift tests
+PASS (`46 passed`), TypeScript typecheck PASS. Skip = `Gradle build — no JDK on PATH`. Per CLAUDE.md
+§3 this is **not** green. `Tests/Conformance/check-single-fixture.sh` exit 0. Link sweep after the
+last edit: 22 files, 0 dead file links, 0 dead anchors, 22/22 banner-stamped.
 
-- **NEW CLASS: edges that exist only across a process boundary.** `taskDescription` is written before
-  termination and read after an OS-initiated relaunch; the `Reconciler` adopt path is reachable on no
-  other launch; `systemCompletionHandler` has an undecidable symbol at *both* ends. Invisible to grep
-  **and** to the local suite. This is the sharpest omission from §4 because it is the scenario the
-  library exists for, and it maps exactly onto ROADMAP's 40 unverified device cells. **Never let a
-  hygiene sweep delete a path the project already documents as unexercisable.**
+### Learnings for future iterations
 
-- **A LIVE DEFECT, found by reading a row instead of counting it — reported, not fixed.**
-  `UploadWorker.kt:84` tags work `"amphora-job:$jobId"` and its two `addTag` calls (`:92`, `:114`) are
-  the only ones in the module. `Reconciler.kt:111` queries `getWorkInfosByTag("amphora-job")` — the
-  bare prefix, no colon, no id. **`getWorkInfosByTag` matches by string equality; WorkManager has no
-  prefix query.** So `liveWorkJobIds()` returns an empty set on every launch and **the Android adopt
-  path can never fire** — every live upload looks orphaned and takes the recover path. Corroboration
-  that the two ends were written against different assumptions: `:113` strips `"amphora-job:"` off
-  results the query cannot have returned. No test covers it. Unverified locally (no JDK, and it needs
-  an instrumented device regardless). Swift is unaffected — it matches on `taskDescription` via
-  `session.allTasks`. **Third defect this tasklist surfaced without fixing.**
-
-- **The inventory's "no reflection anywhere in the tree" was true and misleading**, and that shape
-  recurs. There is no `Class.forName` here because the reflection that reaches this code lives in
-  Room (`UploadDatabase::class.java` → `UploadDatabase_Impl` by name), WorkManager (the worker class
-  name, persisted into a row) and `TurboModuleRegistry.getEnforcing('Amphora')`. Searching *this*
-  tree for reflection can only ever return zero. **A search whose scope excludes the mechanism cannot
-  find the mechanism, and reports a confident zero instead of an error.**
-
-- **Mechanical: my own anchor-checker was wrong twice before it was right.** GitHub's slugger *drops*
-  `—` in place without inserting a space, so `foo — bar` → `foo--bar`. Two normalisers that inserted a
-  space reported 16 broken cross-doc links that were all fine. Verify the verifier against a link you
-  know works before believing it.
-
-STILL OPEN FOR 901 (carried forward, now four items):
-1. `docs/guides/tusd-integration.md` is not indexed in `docs/README.md`, whose own rule is "unlinked
-   is unreachable".
-2. `DefaultUploadEngine.swift` never calls `stageIfRequired` — iOS `ph://` path broken; Kotlin calls
-   its twin at `DefaultUploadEngine.kt:217`.
-3. `resume_data` is written and never read (the reader is specified, unimplemented).
-4. **NEW:** the WorkManager adopt-tag mismatch above. Note this one makes
-   `persistence-and-recovery.md`'s adopt/recover split describe something the Android port cannot
-   currently do — which is squarely a 901 "docs tell the truth" concern as well as a code defect.
-
-TASKLIST 900 IS COMPLETE: US-1 (inventory), US-2 (four removals, three reasoned survivors), US-3
-(the undecidable register). Net code change across the whole tasklist: one Swift dedupe verified
-locally, three small Kotlin removals resting on CI. Net documentation: three cross-linked artifacts
-and three defects found. That ratio is the honest result for a repository of specification plus
-skeletons, and it is worth saying so rather than padding the deletions.
+- **The banner date is a working defect detector, and it is the cheapest one in this tree.** Two of
+  the three defects this story found were in the only two `docs/reference/` files still carrying the
+  pre-sweep date. Before reading anything, sort `docs/` by the `Updated:` field and start at the top —
+  that is what a doc sweep's triage should be. It also means **re-stamping a file you only skimmed
+  destroys the signal**, which is why `ios-host-integration.md` was left at `2026-08-19`.
+- **A prior story's forward-looking note is a lead, not a finding.** US-2 wrote "US-3's archive
+  question, answered in advance: nothing here warranted archiving" — which was the right answer, and
+  was reached without running the two `git log --diff-filter` queries that make it checkable. Inherit
+  the lead; re-derive the evidence.
+- **"Looks stale" splits three ways here, and the distinction is worth making explicitly in prose:**
+  *stale* (correct in place, `## Corrections`), *history* (the record of a decision — keep untouched:
+  the dead-code inventory is the **approval** record its removal record cites row by row, not a
+  superseded proposal), and *an open obligation* (the 40 `NOT YET VERIFIED` cells are the ledger
+  working, not the ledger rotting). Only a fourth category — superseded by a named successor — earns
+  `docs/archive/`, and this tree has none.
+- **The one-directional blind spot is now written down** (`documentation-record.md` §4). Every sweep
+  in this tasklist checked "is each claim in the doc true of the code?" and never "does the code do
+  something no doc mentions?". An *omission* would have survived all three stories. If a future
+  tasklist wants the other direction, that is a different method and a different cost.
+- **`docs/reference/documentation-record.md` is where a future doc sweep starts.** It states the bar
+  for archiving, the seven deliberate keeps with reasons, and what this pass did not verify — written
+  while nothing was pressing on the judgement, so the next pass is not deciding it under the
+  incentive to tidy.

@@ -81,6 +81,68 @@ Two conventions, both consequences of how this repository treats evidence
   misleading as a conclusion — the reflection that reaches this code lives in Room, WorkManager and
   `TurboModuleRegistry`, so searching this tree for it can only ever return zero.
 
+#### Fixed
+
+- **Nine reference documents were read back against the tree and corrected**, each carrying a dated
+  `## Corrections` section saying what it had claimed, what the code says, and what was read to tell
+  them apart. The substantive ones, in rough order of how badly they would have misled a reader:
+  - [`state-machine.md`](docs/reference/state-machine.md) §3 — the **normative** event list named
+    `SetPriority`, which exists in neither port, and six environment signals (`NetworkLost`,
+    `StorageLow`, `PowerLow`, `StorageOk`, `NetworkAvailable`, `FgsQuotaExhausted`) of which five do
+    not exist; both ports carry `Blocked{reason}` / `GateCleared` instead. It also omitted
+    `Schedule`, `SourceResolved` and `SourceMissing` — all three of which its own §2 table already
+    used — and listed five `TransportError` classes where both ports declare seven.
+  - [`persistence-and-recovery.md`](docs/reference/persistence-and-recovery.md) §2 — the registry
+    schema named `metadata` and `policy` (they are `metadataJson` and `policyJson`), a policy field
+    `allowedNetworks` that does not exist, and a `sourceKind` domain neither port declares; it
+    omitted `remoteTerminated`; and it stated an `upload_event` ring per job that **neither port
+    implements**, now kept as a declared gap rather than a schema row.
+  - [`ios-background-transfer.md`](docs/reference/ios-background-transfer.md) and
+    [`platform-constraints.md`](docs/reference/platform-constraints.md) — both said iOS 17 discovers
+    server support via `Upload-Incomplete`; the header is `Upload-Complete`, and had been in every
+    dialect and in `wire-protocol.md` all along. Both also described TUSKit as a dependency of this
+    repository, which [`licensing.md`](docs/reference/licensing.md) has always said it is not.
+  - [`android-build.md`](docs/reference/android-build.md) — told the reader to run
+    `gradle :android:assemble`, the unreproducible form that `gradle-wrapper.properties` and
+    `.github/workflows/ci.yml` both carry a comment against.
+  - [`licensing.md`](docs/reference/licensing.md) — the dependency audit still listed
+    `androidx.core:core-ktx` as a declared Android runtime dependency after the sweep above deleted
+    the declaration. Transitive and Apache-2.0 either way, so the licence conclusion is unchanged;
+    the audit's reproducibility was not.
+- **Three facts that were stated twice and disagreed** are now stated once, with the other side
+  pointing at it: the count of pre-existing Swift-concurrency errors in the `ios` job (
+  [`conformance-vectors.md`](docs/reference/conformance-vectors.md) said three,
+  [`continuous-integration.md`](docs/reference/continuous-integration.md) said two — CI run
+  `33044503283` says two); the pinned tusd version (`platform-constraints.md` said v2.10.0, the
+  Compose digest pin and two other documents say v2.4.0); and whether TUSKit is a dependency.
+- **The two documents that sweep missed**, both still stamped `2026-08-20`, read against the tree
+  afterwards:
+  - [`environment-evidence.md`](docs/reference/environment-evidence.md) — said `UploadWorker`
+    "flushes the acknowledged offset from `onStopped()`". It cannot; `CoroutineWorker` declares
+    `onStopped()` final, which is why the class flushes from a `finally` block under
+    `withContext(NonCancellable)`. The same file *under*-claimed the Swift integration harness,
+    describing it as creating "a fresh client" when it `SIGKILL`s the uploading process and resumes
+    in a genuinely separate one.
+  - [`environment-matrix.md`](docs/reference/environment-matrix.md) — placed the transport selector
+    in `AmphoraUploader`, which contains no `#available` check at all. It is `TransportSelector.select`
+    in `Transport/UploadTransport.swift`, and it picks the dialect along with the transport.
+  - The device-recording field list, stated in both files in slightly different words, now has one
+    home in the matrix. No matrix cell moved: all 40 still read `NOT YET VERIFIED — physical device`.
+
+#### Added
+
+- [The documentation sweep](docs/reference/documentation-record.md) — the record of the sweep
+  itself, in three parts a diff cannot supply. **Nothing was archived and nothing was deleted**:
+  `git log --diff-filter=D -- '*.md'` returns zero rows across all 100 commits, so `docs/archive/`
+  does not exist and was not created empty to make a layout table look complete; the bar a document
+  must clear to go there is stated now, while nothing is pressing on the judgement. Seven documents
+  that look stale are kept deliberately, each with its reason — the dead-code inventory is the
+  *approval* record its removal record cites row by row, and the environment ledgers are not stale
+  for listing obligations that are unmet. And the limits: the reading was one-directional, so an
+  omission would have survived it; the conformance fixture cannot check the prose, which is how the
+  normative state machine drifted in the first place; no integration harness was run; and no JDK was
+  present for any of it.
+
 ### 2026-08-27
 
 #### Added
