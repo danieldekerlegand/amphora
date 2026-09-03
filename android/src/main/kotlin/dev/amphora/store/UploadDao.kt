@@ -2,7 +2,6 @@ package dev.amphora.store
 
 import androidx.room.*
 import dev.amphora.model.UploadJob
-import dev.amphora.model.UploadState
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -17,9 +16,6 @@ interface UploadDao {
     /** The reconciler's working set: everything not durably finished. */
     @Query("SELECT * FROM upload_job WHERE state NOT IN ('COMPLETED','FAILED','CANCELED')")
     suspend fun unfinished(): List<UploadJob>
-
-    @Query("SELECT * FROM upload_job WHERE state = :state")
-    suspend fun inState(state: UploadState): List<UploadJob>
 
     /** Cancelations whose DELETE never reached the server. Retried opportunistically. */
     @Query("SELECT * FROM upload_job WHERE state = 'CANCELED' AND remoteTerminated = 0")
