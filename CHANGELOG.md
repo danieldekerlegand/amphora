@@ -115,6 +115,33 @@ Two conventions, both consequences of how this repository treats evidence
   [`continuous-integration.md`](docs/reference/continuous-integration.md) said two — CI run
   `33044503283` says two); the pinned tusd version (`platform-constraints.md` said v2.10.0, the
   Compose digest pin and two other documents say v2.4.0); and whether TUSKit is a dependency.
+- **The two documents that sweep missed**, both still stamped `2026-08-20`, read against the tree
+  afterwards:
+  - [`environment-evidence.md`](docs/reference/environment-evidence.md) — said `UploadWorker`
+    "flushes the acknowledged offset from `onStopped()`". It cannot; `CoroutineWorker` declares
+    `onStopped()` final, which is why the class flushes from a `finally` block under
+    `withContext(NonCancellable)`. The same file *under*-claimed the Swift integration harness,
+    describing it as creating "a fresh client" when it `SIGKILL`s the uploading process and resumes
+    in a genuinely separate one.
+  - [`environment-matrix.md`](docs/reference/environment-matrix.md) — placed the transport selector
+    in `AmphoraUploader`, which contains no `#available` check at all. It is `TransportSelector.select`
+    in `Transport/UploadTransport.swift`, and it picks the dialect along with the transport.
+  - The device-recording field list, stated in both files in slightly different words, now has one
+    home in the matrix. No matrix cell moved: all 40 still read `NOT YET VERIFIED — physical device`.
+
+#### Added
+
+- [The documentation sweep](docs/reference/documentation-record.md) — the record of the sweep
+  itself, in three parts a diff cannot supply. **Nothing was archived and nothing was deleted**:
+  `git log --diff-filter=D -- '*.md'` returns zero rows across all 100 commits, so `docs/archive/`
+  does not exist and was not created empty to make a layout table look complete; the bar a document
+  must clear to go there is stated now, while nothing is pressing on the judgement. Seven documents
+  that look stale are kept deliberately, each with its reason — the dead-code inventory is the
+  *approval* record its removal record cites row by row, and the environment ledgers are not stale
+  for listing obligations that are unmet. And the limits: the reading was one-directional, so an
+  omission would have survived it; the conformance fixture cannot check the prose, which is how the
+  normative state machine drifted in the first place; no integration harness was run; and no JDK was
+  present for any of it.
 
 ### 2026-08-27
 

@@ -72,6 +72,11 @@ documentation still greps as current.
 - [The verification record](reference/verification-record.md) — the rule that a story may not be
   marked passing on work its own notes record as not having run, what breaking it cost this
   repository at tasklist `80`, and what an evidence-bearing note has to contain.
+- [The documentation sweep](reference/documentation-record.md) — why `docs/archive/` does not exist
+  and what would have to be true for a document to go there, the seven things that look stale and
+  are kept deliberately (the three dead-code documents among them, because a proposal is the record
+  of an approval), and the honest limits of the sweep: one-directional reading, no harness run, no
+  JDK, and not one of the 40 device cells moved.
 
 ## Guides
 
@@ -99,7 +104,7 @@ Checked on 2026-09-03 against the documentation standard (five root files; seven
 | The standard says | Here |
 | --- | --- |
 | Five root files | `README.md`, `CHANGELOG.md`, `CLAUDE.md`, `ROADMAP.md`, `LICENSE` — all present. |
-| Seven directories under `docs/` | `reference/` and `guides/` exist. The other five hold nothing yet and so are not committed; git does not track empty directories. `decisions/` is the one with named, outstanding content — see above. |
+| Seven directories under `docs/` | `reference/` and `guides/` exist. The other five hold nothing yet and so are not committed; git does not track empty directories. `decisions/` is the one with named, outstanding content — see above. `archive/` is empty because **nothing has ever been deleted or superseded here**; the evidence and the bar for archiving are in [The documentation sweep §1](reference/documentation-record.md#1-the-archive-decision-nothing-was-archived-and-nothing-was-deleted). |
 | No directory outside the seven | **No declared exceptions.** There was one violation and it was fixed rather than excepted: `android/BUILD.md` moved to [reference/android-build.md](reference/android-build.md). Nothing cited the old path, so nothing needed repointing. |
 | Every document linked from here | Every `.md` file in the repository outside `.chief/` runtime state is listed above. |
 | Every document banner-stamped | Every file under `docs/` opens with `Status · Updated · Owner`. |
