@@ -1,3 +1,67 @@
 # Chief Progress — 901-docs-tell-the-truth
 Started: Thu Sep  3 05:55:44 CDT 2026
 ---
+
+## Codebase Patterns
+
+- **Link checking here needs a GitHub-accurate slugifier.** Headings in this tree are full of
+  spaced em dashes (`## 1. Where this actually is — 2026-08-27`). GitHub drops the em dash and maps
+  *each remaining space to its own hyphen*, producing `...is--2026-08-27`. A slugifier that collapses
+  `\s+` to one hyphen reports 25 false positives across these docs. Correct recipe: lowercase, strip
+  backticks, unwrap `[text](url)` to `text`, delete everything not `\w`/space/hyphen, then
+  `.strip().replace(' ', '-')`. Skip fenced code blocks when collecting headings.
+- **The banner regex.** `head -5 "$f" | grep -q '^> \*\*Status:\*\*.*\*\*Updated:\*\*.*\*\*Owner:\*\*'`
+  — the banner is always line 3, a blockquote, immediately after the `# Title` and a blank line.
+- **`verify.sh` exits 0 on a skip.** Never read exit 0 as green. Read the summary line. On these
+  machines it is always `4 passed, 1 skipped, 0 failed` with `Gradle build — no JDK on PATH`.
+
+---
+
+## US-1 — Every document is reachable, banner-stamped, and in the right place (done)
+
+**Measured first, then fixed.** The PRD's headline ("1 of 14 docs carry no banner") was directionally
+right but the denominator is 17 files under `docs/` (1 index + 2 guides + 14 reference), and there
+were three defects, not one:
+
+| Defect | Before | After |
+| --- | --- | --- |
+| Dead file links | 0 / 22 files | 0 |
+| Dead anchors | 0 | 0 |
+| `docs/` files with no banner | 1 (`docs/guides/tusd-integration.md`) | 0 |
+| Docs not linked from `docs/README.md` | 2 | 0 |
+| Directories outside the standard's seven | 1 (`android/`, holding `BUILD.md`) | 0 |
+
+Files changed:
+- `docs/guides/tusd-integration.md` — banner added, `Status: Live`.
+- `android/BUILD.md` → `docs/reference/android-build.md` (`git mv`) — banner added plus an italic
+  dated note recording the move and the old path. `grep -rn "BUILD\.md"` over the whole tree
+  (not just markdown — CI yaml and shell too) found **zero** references, so nothing needed
+  repointing.
+- `docs/README.md` — indexed both; added a `## Layout` section that records the conformance check
+  as a table and states explicitly that there are **no declared directory exceptions**, because the
+  one violation was fixed rather than excepted.
+
+**Gate:** `.chief/verify.sh` → `4 passed, 1 skipped, 0 failed`, exit 0. Skip = `Gradle build — no
+JDK on PATH`. Per CLAUDE.md §3 this is **not** green; it is unverified for Android. This story moved
+one Android-adjacent *document* and touched no Kotlin, so the skip conceals nothing about it.
+
+### Learnings for future iterations
+
+- **`docs/reference/android-build.md` is stamped `Draft`, not `Live`, on purpose — US-2 owes it a
+  correction.** It tells the reader to run `gradle :android:assemble`. The repo has a checked-in
+  wrapper, and `gradle/wrapper/gradle-wrapper.properties` opens with a comment explaining that bare
+  `gradle` uses whatever the runner image ships (9.7.0 on 2026-08-27) and is therefore not
+  reproducible. Everything else in that file checks out against `android/build.gradle.kts`:
+  `minSdk 26`, `targetSdk 35`, `compileSdk 35`, JDK 17 — and against the root `build.gradle.kts`:
+  AGP 8.6.1, Kotlin 2.0.21, wrapper Gradle 8.10.2. The "authoring machine has no JDK" claim is
+  still true and still verifiable by running the gate.
+- **US-2 already has one confirmed drift target (above) and should start from the tree, not the
+  docs.** The cheap sweep for the rest: grep every backticked path and command out of `docs/**` and
+  test each against the filesystem, then check the vector counts (40 / 39 / 1 / 3) and the two I6
+  disk numbers (4 KiB Swift / 0 KiB Kotlin) against `Tests/Conformance/` and both ports' test code.
+- **US-3 will need `docs/archive/` to exist**, and git cannot commit an empty directory — it will
+  come into being with the first archived document, or not at all. If nothing turns out to warrant
+  archiving, say that in the record rather than creating a placeholder.
+- **The three dead-code docs cross-reference each other by anchor heavily** (`dead-code-inventory`,
+  `-removal`, `-undecidable`: 25 inter-document anchor links). Renaming any heading in those three
+  breaks links silently. Re-run the anchor check after touching them.
