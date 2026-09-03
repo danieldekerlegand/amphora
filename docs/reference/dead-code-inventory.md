@@ -37,9 +37,11 @@ Every claim below was produced by one of these. They ran from the repository roo
 | S8 | `grep -rn "VERSION_CODES\|SDK_INT\|RequiresApi"` (Kotlin) and `grep -rn "#available\|@available"` (Swift), compared against `minSdk = 26` and `platforms: [.iOS(.v15), .macOS(.v14)]` | `android/src`, `ios/` | code behind a flag that can no longer be set |
 | S9 | `grep -rn "<script>" . --include='*.sh' --include='*.yml' --include='*.md'` for each committed script, plus a read of `.github/workflows/ci.yml` and `.chief/verify.sh` | `integration/tusd/*.sh`, `Tests/Conformance/*`, `packages/react-native/scripts/*` | scripts nothing runs |
 
-**What none of them can see** — stated in full in §4, and in [US-3's terms](#4-what-the-searches-cannot-decide):
-consumers outside this repository, reflection, framework dispatch, and annotation-driven code
-generation. Three of the four occur here, and §2 is mostly made of them.
+**What none of them can see** — sketched in §4 and treated in full in the
+[undecidable register](dead-code-undecidable.md): consumers outside this repository, annotation-driven
+code generation, framework dispatch, reflection, symbols bound by string rather than by reference,
+and edges that only exist across a process boundary. **Five of the six occur here**, and §2 is mostly
+made of them.
 
 ---
 
@@ -261,8 +263,14 @@ two ports of one specification is this repository's design, and `Tests/Conforman
 
 ## 4. What the searches cannot decide
 
+**Superseded and extended by the [undecidable register](dead-code-undecidable.md), which is the
+full treatment.** Two things about this section did not survive being worked through row by row:
+the list of four classes is **incomplete** — string-keyed decoding and cross-process reachability
+both occur here and are missing below — and item 4's reflection finding is true as a grep result but
+misleading as a conclusion. Both are corrected in place below rather than rewritten.
+
 Stated here as a limit of the method, not as a disclaimer. A static search over this tree is blind to
-four things, and three of them occur:
+~~four~~ **six** things, and ~~three~~ **five** of them occur:
 
 1. **Consumers outside this repository.** The decisive one, and the one this portfolio has already
    been bitten by. `packages/react-native/src/*` and the `public` surface of `AmphoraUploader` on
@@ -277,8 +285,26 @@ four things, and three of them occur:
    `onCapabilitiesChanged` (`NetworkGovernor.kt`) by `ConnectivityManager`; `onResponse` /
    `onFailure` (`CallAwait.kt`) by OkHttp; `doWork` (`UploadWorker.kt`) by WorkManager. S3 and S4
    report **zero** call sites for all of them. Every one is mandatory.
-4. **Reflection.** Searched for and not found: no `Class.forName`, no `NSClassFromString`, no
-   dynamic member lookup anywhere in the tree.
+4. **Reflection.** ~~Searched for and not found: no `Class.forName`, no `NSClassFromString`, no
+   dynamic member lookup anywhere in the tree.~~ **True, and misleading.** The tree contains no
+   reflection because the reflection that reaches this code lives in the libraries: `Room
+   .databaseBuilder(…, UploadDatabase::class.java, …)` resolves `UploadDatabase_Impl` by name,
+   WorkManager instantiates `UploadWorker` from a persisted class name, and
+   `TurboModuleRegistry.getEnforcing<Spec>('Amphora')` resolves by string. Searching *this* tree for
+   reflection can only ever return zero. See
+   [undecidable §1.4](dead-code-undecidable.md#14-reflection--the-inventorys-answer-was-true-and-misleading).
+
+5. **Symbols bound by string rather than by reference** — *missing from this list as first written*.
+   `BlockReason.powerLow` has **zero** references in **both** ports and is live: one conformance
+   vector reaches it through `rawValue`/`valueOf`. Enum names are also spelled into SQL literals in
+   both stores. See
+   [undecidable §1.5](dead-code-undecidable.md#15-string-keyed-decoding--a-class-the-inventory-did-not-name-with-a-proven-near-miss).
+
+6. **Edges that only exist across a process boundary** — *also missing as first written*, and the
+   sharpest omission, because it is the scenario this library exists for. `taskDescription` is
+   written before termination and read after an OS-initiated relaunch; the `Reconciler` adopt path
+   is reachable on no other launch. Invisible to search *and* to the local suite. See
+   [undecidable §1.6](dead-code-undecidable.md#16-reachability-only-across-a-process-boundary).
 
 There is a fifth limit specific to this machine, and it is the sharpest constraint on story US-2.
 **There is no JDK on `PATH` here**, so `.chief/verify.sh` reports `Gradle build → SKIPPED` — which is
@@ -295,7 +321,7 @@ rests entirely on CI, and this document should not be read as saying otherwise.
 | Genuinely dead (§1) | 6 as measured, **3 on review** | 3 removed (§1.2, §1.4, §1.5). §1.1 was misclassified here and stays; §1.3 and §1.6 stay with reasons. See the [removal record](dead-code-removal.md). |
 | Deliberately unexercised (§2) | 8 | **Do not delete.** Recorded so the next sweep stops here rather than re-deriving them. |
 | Duplicated implementations (§3) | 3 | §3.1 resolved — it was the only one whose drift was both silent and behavioural. §3.2 and §3.3 deferred, with reasons. |
-| Undecidable (§4) | 4 classes | Left in place by construction. |
+| Undecidable (§4) | 4 classes as measured, **6 on review** | Left in place by construction. Registered candidate-by-candidate, with the two classes this section missed, in the [undecidable register](dead-code-undecidable.md). |
 
 Two things the sweep looked for and did not find, worth stating so nobody looks again: **zero**
 commented-out code blocks in any source language (S6), and **zero** unused imports in the Swift

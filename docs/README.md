@@ -54,11 +54,18 @@ documentation still greps as current.
 - [Dead-code inventory](reference/dead-code-inventory.md) — the candidate list a human approves
   before anything is deleted: nine reproducible searches and their scopes, six genuinely-dead
   findings, eight things that fail a static search and are nonetheless load-bearing (ten Room
-  `@TypeConverter`s among them), three intra-port duplications ranked by what drift would cost, and
-  the four classes of thing a static search over this tree cannot see.
+  `@TypeConverter`s among them), three intra-port duplications ranked by what drift would cost, and a
+  first sketch of what a static search over this tree cannot see — corrected in place from four
+  classes to six by the undecidable register below.
 - [Dead-code removal record](reference/dead-code-removal.md) — what the inventory proposed versus
   what happened: four removals, one commit each, and the three candidates that survived with the
   reason each survived — including the one whose evidence in the inventory turned out to be wrong.
+- [What the dead-code sweep could not decide](reference/dead-code-undecidable.md) — the register of
+  candidates the method could not resolve, left in place: six blind-spot classes rather than the
+  four the inventory named, including the public API of both ports (`AmphoraUploader` is referenced
+  nowhere outside the file that declares it, on either platform), `BlockReason.powerLow` — zero
+  references in *both* ports and reached live from a conformance vector by string — and the edges
+  that exist only across an OS-initiated relaunch. Also the limits of the method itself.
 - [The verification record](reference/verification-record.md) — the rule that a story may not be
   marked passing on work its own notes record as not having run, what breaking it cost this
   repository at tasklist `80`, and what an evidence-bearing note has to contain.

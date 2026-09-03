@@ -62,6 +62,24 @@ Two conventions, both consequences of how this repository treats evidence
   of those three (`loadResumeData`) survived because the inventory's own corroborating grep result
   was wrong: the mechanism *is* specified, in `ios-background-transfer.md:65-66` and
   `platform-constraints.md:21-22`.
+- [What the dead-code sweep could not decide](docs/reference/dead-code-undecidable.md) — the register
+  of candidates the method could not resolve, all left in place, and the limits of the method itself.
+  Working through the tree candidate by candidate found **six** blind-spot classes where the inventory
+  had named four; the two it missed are symbols bound by string rather than by reference, and edges
+  that exist only across a process boundary. Both occur here. Observed, and the reason the register
+  exists: `BlockReason.powerLow` has **zero** references in *both* ports — the shape that marked
+  `WireDialect.Rufh` as the strongest dead candidate in the tree — and is live, decoded by raw value
+  from `"POWER_LOW"` in conformance vector `row-14-power-low`. Likewise `AmphoraUploader`, the entire
+  public API of both platforms, is referenced nowhere outside the file that declares it; the searches
+  that produced the inventory, applied honestly to it, would delete the library.
+
+#### Changed
+
+- [Dead-code inventory §4](docs/reference/dead-code-inventory.md) corrected in place, struck through
+  rather than rewritten, on two points: its list of four blind spots was incomplete, and its
+  reflection finding (*"no `Class.forName` … anywhere in the tree"*) was true as a grep result and
+  misleading as a conclusion — the reflection that reaches this code lives in Room, WorkManager and
+  `TurboModuleRegistry`, so searching this tree for it can only ever return zero.
 
 ### 2026-08-27
 

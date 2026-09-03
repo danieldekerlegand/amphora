@@ -8,7 +8,8 @@ they survived are the more valuable half of this document — they are what stop
 re-deriving the same files and reaching the same wrong conclusion.
 
 The inventory is the *proposal*. This is the *disposition*. Where the two disagree, this document
-is later and wins.
+is later and wins. What neither could decide — the public API of both ports among it — is registered
+separately in [what the sweep could not decide](dead-code-undecidable.md).
 
 ---
 
