@@ -18,6 +18,21 @@ Started: Thu Sep  3 05:27:52 CDT 2026
   `grep -rhoE '(struct|class|enum|protocol|actor) [A-Z][A-Za-z0-9_]*' ios/Sources | awk '{print $2}' | sort -u`
   then per name `grep -rn --include='*.swift' -w <name> ios/ | grep -v '<decl form>' | wc -l`.
   Kotlin equivalent over `android/src`. Refcount 0 or 1 is the shortlist, not the answer.
+- **A zero refcount is NOT reachability, and in this repo it is usually not even evidence.**
+  Six ways they come apart, all present: external consumers (the entire public API of both ports
+  reports zero — `AmphoraUploader` is referenced nowhere outside its own file), Room/kapt codegen,
+  framework dispatch, reflection *inside libraries* this tree merely feeds, **symbols bound by
+  string** (`BlockReason.powerLow`: zero refs in both ports, live via `vectors.json`), and **edges
+  that only exist across a process boundary** (`taskDescription`, the reconciler adopt path). Before
+  believing a zero, grep the *fixture* and the *docs* for the value's spelling, not just its symbol.
+  Full register: `docs/reference/dead-code-undecidable.md`.
+- **Verify a proposed deletion by performing it, then reverting.** Comment the symbol out, run
+  `swift build` and `swift run --package-path ios AmphoraPathTests`, restore, confirm `git status`
+  is clean. Costs ~10s and converts a prediction into an observation — which is what this repo's
+  docs require anyway. Note a clean *build* proves nothing here; the suite is where it dies.
+- **GitHub anchor slugs drop `—` in place, without inserting a space:** `foo — bar` → `foo--bar`.
+  A link checker that substitutes a space instead reports every cross-doc link in `docs/reference/`
+  as broken. Test any such checker against a link known to work before trusting its output.
 
 ---
 
@@ -162,3 +177,92 @@ STILL OPEN FOR 901 (unchanged from US-1, restated so it is not lost): `docs/guid
 is not indexed in `docs/README.md`. And two live defects found by this sweep and deliberately NOT
 fixed here: `DefaultUploadEngine.swift` never calls `stageIfRequired` (iOS `ph://` path broken, Kotlin
 does call its twin), and the `resume_data` table is written and never read.
+
+---
+
+## 2026-09-03 — US-3: What the sweep could not decide
+
+WHAT I DID. Wrote the third and last artifact, `docs/reference/dead-code-undecidable.md` (~270
+lines), indexed in `docs/README.md` and cross-linked from both prior artifacts. **Removed nothing** —
+the register IS the deliverable. Also corrected inventory §4 in place (struck through, US-2's
+precedent) because working the tree candidate-by-candidate showed it was incomplete and, in one
+place, misleading.
+
+FILES CHANGED: `docs/reference/dead-code-undecidable.md` (new), `dead-code-inventory.md` (§0, §4,
+§4.4, §5 annotated), `dead-code-removal.md` (pointer), `docs/README.md` (index + inventory entry
+corrected), `CHANGELOG.md` (Added + Changed). Commit `fc1ae5a`.
+
+VERIFY: `.chief/verify.sh` → 3 passed, 1 skipped, 0 failed (SKIPPED Gradle — no JDK). Four cheap CI
+gates green. Docs-only; `git status` confirms nothing under `ios/ android/ packages/` differs from
+HEAD, including after the control experiment below.
+
+**SIX BLIND-SPOT CLASSES, NOT FOUR.** The inventory's §4 was written as a closing disclaimer and it
+under-counted. Reading each class as a candidate list instead of a category found two more, and both
+occur here — §1.5 string-keyed decoding, §1.6 cross-process reachability.
+
+LEARNINGS FOR FUTURE ITERATIONS.
+
+- **The headline, and it recontextualises the whole tasklist:** applied honestly to the top of this
+  library, S1/S3 report **the entire public API of both ports as dead**. `grep -rn AmphoraUploader
+  ios/` returns two lines, both inside the file that declares it. `configure` and
+  `handleBackgroundEvents` — the two call sites `ios-host-integration.md` labels *"Not optional"* —
+  return one line each, their own declaration. The searches that produced the inventory, pointed at
+  the one type this library exists to expose, would delete the library. **Any future refcount sweep
+  here must state that up front**, or it is measuring how much of the tree is a library rather than
+  how much is dead.
+
+- **NEW CLASS, and it caught a real near-miss: symbols bound by string, not by reference.**
+  `BlockReason.powerLow` has **zero** references in **both** ports — by US-1's own reasoning
+  (cross-port symmetry, the signal that condemned `WireDialect.Rufh`) the strongest dead signal this
+  repo offers. It is live. One of the 40 vectors, `row-14-power-low`, reaches it by raw-value decode.
+  **I verified this by running the deletion, not by reasoning about it:** `swift build` →
+  `Build complete!` (compiles clean, nothing references it), then `swift run AmphoraPathTests` →
+  `ConformanceTests.swift:165: Fatal error: Unexpectedly found nil`. Restored; 46 passed. Do this.
+  The whole tasklist's most expensive lesson is that a quoted search reads exactly like an executed
+  one, and the same is true of a predicted build result.
+
+- **NEW CLASS: edges that exist only across a process boundary.** `taskDescription` is written before
+  termination and read after an OS-initiated relaunch; the `Reconciler` adopt path is reachable on no
+  other launch; `systemCompletionHandler` has an undecidable symbol at *both* ends. Invisible to grep
+  **and** to the local suite. This is the sharpest omission from §4 because it is the scenario the
+  library exists for, and it maps exactly onto ROADMAP's 40 unverified device cells. **Never let a
+  hygiene sweep delete a path the project already documents as unexercisable.**
+
+- **A LIVE DEFECT, found by reading a row instead of counting it — reported, not fixed.**
+  `UploadWorker.kt:84` tags work `"amphora-job:$jobId"` and its two `addTag` calls (`:92`, `:114`) are
+  the only ones in the module. `Reconciler.kt:111` queries `getWorkInfosByTag("amphora-job")` — the
+  bare prefix, no colon, no id. **`getWorkInfosByTag` matches by string equality; WorkManager has no
+  prefix query.** So `liveWorkJobIds()` returns an empty set on every launch and **the Android adopt
+  path can never fire** — every live upload looks orphaned and takes the recover path. Corroboration
+  that the two ends were written against different assumptions: `:113` strips `"amphora-job:"` off
+  results the query cannot have returned. No test covers it. Unverified locally (no JDK, and it needs
+  an instrumented device regardless). Swift is unaffected — it matches on `taskDescription` via
+  `session.allTasks`. **Third defect this tasklist surfaced without fixing.**
+
+- **The inventory's "no reflection anywhere in the tree" was true and misleading**, and that shape
+  recurs. There is no `Class.forName` here because the reflection that reaches this code lives in
+  Room (`UploadDatabase::class.java` → `UploadDatabase_Impl` by name), WorkManager (the worker class
+  name, persisted into a row) and `TurboModuleRegistry.getEnforcing('Amphora')`. Searching *this*
+  tree for reflection can only ever return zero. **A search whose scope excludes the mechanism cannot
+  find the mechanism, and reports a confident zero instead of an error.**
+
+- **Mechanical: my own anchor-checker was wrong twice before it was right.** GitHub's slugger *drops*
+  `—` in place without inserting a space, so `foo — bar` → `foo--bar`. Two normalisers that inserted a
+  space reported 16 broken cross-doc links that were all fine. Verify the verifier against a link you
+  know works before believing it.
+
+STILL OPEN FOR 901 (carried forward, now four items):
+1. `docs/guides/tusd-integration.md` is not indexed in `docs/README.md`, whose own rule is "unlinked
+   is unreachable".
+2. `DefaultUploadEngine.swift` never calls `stageIfRequired` — iOS `ph://` path broken; Kotlin calls
+   its twin at `DefaultUploadEngine.kt:217`.
+3. `resume_data` is written and never read (the reader is specified, unimplemented).
+4. **NEW:** the WorkManager adopt-tag mismatch above. Note this one makes
+   `persistence-and-recovery.md`'s adopt/recover split describe something the Android port cannot
+   currently do — which is squarely a 901 "docs tell the truth" concern as well as a code defect.
+
+TASKLIST 900 IS COMPLETE: US-1 (inventory), US-2 (four removals, three reasoned survivors), US-3
+(the undecidable register). Net code change across the whole tasklist: one Swift dedupe verified
+locally, three small Kotlin removals resting on CI. Net documentation: three cross-linked artifacts
+and three defects found. That ratio is the honest result for a repository of specification plus
+skeletons, and it is worth saying so rather than padding the deletions.
