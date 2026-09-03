@@ -87,3 +87,78 @@ LEARNINGS FOR FUTURE ITERATIONS.
   in `docs/README.md`**, whose own rule is "unlinked is unreachable". Left alone deliberately —
   900's brief says do not fix docs beyond what a removal strands.
 - Research doc: none for this tasklist (`research` not set). The map above is the substitute.
+
+---
+
+## 2026-09-03 — US-2: Removal, with the tree still green and the reason recorded
+
+WHAT I DID. Acted on the US-1 inventory in **four commits, one finding each**, then wrote the
+disposition record. Four removals went in; **three of the six §1 "genuinely dead" candidates did
+not**, and one of those three did not because *the inventory's own evidence for it was wrong*.
+
+FILES CHANGED
+- `ios/Sources/Amphora/Transport/ControlPlaneClient.swift`, `Session/BackgroundSessionManager.swift`
+  — `afabf05`, the §3.1 dedupe.
+- `android/src/main/kotlin/dev/amphora/store/UploadDao.kt` — `ac91b10`, `inState` + its stranded
+  `UploadState` import.
+- `android/src/main/kotlin/dev/amphora/work/UploadNotifications.kt` — `9edd129`, the `SDK_INT >= O`
+  guard.
+- `android/build.gradle.kts` — `6d16ac7`, the `core-ktx` declaration.
+- `docs/reference/dead-code-removal.md` (new), `docs/reference/dead-code-inventory.md` (disposition
+  markers), `docs/README.md`, `CHANGELOG.md` — `5bed8ac`.
+
+VERIFY. `.chief/verify.sh` after every commit: **3 passed, 1 skipped, 0 failed** (PASS Swift build,
+PASS Swift tests 46 passed, PASS TypeScript typecheck, SKIPPED Gradle — no JDK). All four cheap CI
+gates green on the final tree. **Three of the four removals are Kotlin and rest entirely on CI** —
+that is written into the commit messages, the removal record §4, and the CHANGELOG entries.
+**No test was deleted, weakened or adjusted.** The suite runs the same 46 cases before and after.
+
+THE FINDING THAT MATTERS MOST FOR 901 AND BEYOND — **US-1's §1.1 corroboration row was false.**
+It claimed `grep -rn "resume_data\|resumeData\|ResumeData" docs/ Tests/ packages/ integration/`
+"returns nothing". Re-run verbatim it returns **four lines**: `ios-background-transfer.md:65-66`
+("we persist the blob **before** reporting the error, since its presence means 'resumable' rather
+than 'start over'") and `platform-constraints.md:21-22`, which names the consumer
+`uploadTask(withResumeData:)`. `loadResumeData` is therefore the unimplemented **read** half of a
+specified iOS 17 capability — the same shape as §2.4's `nativeResumeUnavailable` chain — and belongs
+in §2. It was NOT removed. The disk leak §1.1 flagged is real and unchanged: the fix is to implement
+the reader, not to delete it.
+
+**Why that grep result was wrong is worth knowing:** `uploadTaskResumeData` contains the substring
+`ResumeData`, so the pattern *should* have hit. The claim was recorded, not run. That is the single
+most dangerous failure mode in this tasklist — a search that is *quoted* rather than executed reads
+exactly like one that was.
+
+ALSO NOT REMOVED, both recorded in the removal record with reasons:
+- `WireDialect.Rufh` (Kotlin). `wire-protocol.md:5-9` — "Two dialects, one transport interface" with
+  a column-per-dialect table naming `Rufh`, written to span both ports; Swift's `RufhDialect` is
+  live. Deleting the Kotlin half turns a specification into a lie. Needs a decision: implement the
+  construction site, or amend the doc to say RUFH is iOS-only.
+- The three `@RequiresApi(O)`. True documentation, and the only thing keeping `androidx.annotation`
+  on the classpath.
+- Duplications §3.2 (two Swift transports) and §3.3 (`.offsetAdvanced`) deferred: the first crosses
+  the seam I6's three transport vectors watch and the transports' *difference* IS I6; the second is
+  state-machine policy pinned by all 40 vectors.
+
+LEARNINGS FOR FUTURE ITERATIONS.
+- **Re-run the search before you act on a quoted one.** Two of six §1 rows survived contact with
+  their own evidence; one of them because the evidence was never executed. Checking all six cost
+  minutes. Deleting `loadResumeData` would have erased the only in-code trace of a documented iOS 17
+  capability, and nobody re-reads a deleted file.
+- **"Specified but unimplemented" and "dead" look identical to grep and are opposites.** The
+  discriminator is always a *document*, never a refcount. Both survivors in this pass were resolved
+  by reading `docs/reference/`, not by counting references. When a symbol's zero-caller status is
+  the whole case for deletion, grep the docs for the *mechanism* it implements, not just its name.
+- **A correction to a prior story's artifact belongs IN that artifact, struck through.** The
+  inventory's §1.1 rows are struck through in place with the correction beside them, not silently
+  rewritten — matching how CHANGELOG.md handles tasklist `80`. A rewritten artifact loses the record
+  that the method can fail this way.
+- **One commit per finding is cheap here and worth it.** Each of the four is a few lines; the value
+  is that the three CI-only Kotlin ones can be reverted individually if CI disagrees, without
+  touching the one change that was actually verified locally.
+- **Kotlin markdown/table gotcha, mechanical:** inserting a paragraph directly above a Markdown table
+  with no blank line between silently stops the table rendering. Bit me once in the inventory.
+
+STILL OPEN FOR 901 (unchanged from US-1, restated so it is not lost): `docs/guides/tusd-integration.md`
+is not indexed in `docs/README.md`. And two live defects found by this sweep and deliberately NOT
+fixed here: `DefaultUploadEngine.swift` never calls `stageIfRequired` (iOS `ph://` path broken, Kotlin
+does call its twin), and the `resume_data` table is written and never read.
