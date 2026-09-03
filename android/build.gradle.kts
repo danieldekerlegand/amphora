@@ -88,7 +88,6 @@ kapt {
 
 dependencies {
     implementation("androidx.annotation:annotation:1.8.2")
-    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.room:room-runtime:2.6.1")
     // UploadDao's queries are `suspend`/`Flow`. Room's compiler rejects those outright without
     // room-ktx — the first real Gradle build (CI run 33038526156) failed here with

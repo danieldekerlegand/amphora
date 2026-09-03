@@ -209,6 +209,10 @@ extension BackgroundSessionManager: URLSessionDataDelegate {
     }
 }
 
+/// The single source of truth for HTTP status → retry policy on the Swift side. `TransportError`
+/// `.http` defers to it (`ControlPlaneClient.swift`) rather than restating the table: the two are
+/// read on different paths — session delegate and foreground control plane — and no conformance
+/// vector covers status classification, so a divergence would ship silently.
 public enum HTTPStatus {
     public static func classify(_ code: Int) -> ErrorClass {
         switch code {

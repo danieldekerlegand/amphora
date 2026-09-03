@@ -121,15 +121,10 @@ public extension TransportError {
         case .gone: return .fatal          // caller converts to `.gone` before reaching here
         case .missingUploadURL, .missingLocation, .missingOffset, .unexpectedOffset, .badResponse: return .protocolError
         case .remainderStagingDenied: return .local
-        case let .http(code):
-            switch code {
-            case 401, 403: return .auth
-            case 409, 460: return .protocolError
-            case 412: return .protocolVersion
-            case 400, 413: return .fatal
-            case 429, 500...599: return .transient
-            default: return .fatal
-            }
+        // One table, not two. This arm and the background-session delegate read the SAME status
+        // classification on different paths, so a second copy here would let a change to one of
+        // them retry 429 on HEAD and give up on it mid-transfer, with every vector still green.
+        case let .http(code): return HTTPStatus.classify(code)
         }
     }
 }

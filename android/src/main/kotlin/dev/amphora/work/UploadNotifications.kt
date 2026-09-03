@@ -27,13 +27,15 @@ class UploadNotifications(private val context: Context) {
         }
     }
 
+    // No SDK_INT >= O guard: VERSION_CODES.O is API 26 and minSdk is 26, so the condition was
+    // true on every device this library can be installed on and the implicit else was
+    // unreachable. The Q guard in foregroundInfo() above is a different matter and stays — 26
+    // through 28 genuinely take the two-argument ForegroundInfo.
     private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = context.getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Uploads", NotificationManager.IMPORTANCE_LOW),
-            )
-        }
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Uploads", NotificationManager.IMPORTANCE_LOW),
+        )
     }
 
     private companion object {
