@@ -81,6 +81,41 @@ Two conventions, both consequences of how this repository treats evidence
   misleading as a conclusion — the reflection that reaches this code lives in Room, WorkManager and
   `TurboModuleRegistry`, so searching this tree for it can only ever return zero.
 
+#### Fixed
+
+- **Nine reference documents were read back against the tree and corrected**, each carrying a dated
+  `## Corrections` section saying what it had claimed, what the code says, and what was read to tell
+  them apart. The substantive ones, in rough order of how badly they would have misled a reader:
+  - [`state-machine.md`](docs/reference/state-machine.md) §3 — the **normative** event list named
+    `SetPriority`, which exists in neither port, and six environment signals (`NetworkLost`,
+    `StorageLow`, `PowerLow`, `StorageOk`, `NetworkAvailable`, `FgsQuotaExhausted`) of which five do
+    not exist; both ports carry `Blocked{reason}` / `GateCleared` instead. It also omitted
+    `Schedule`, `SourceResolved` and `SourceMissing` — all three of which its own §2 table already
+    used — and listed five `TransportError` classes where both ports declare seven.
+  - [`persistence-and-recovery.md`](docs/reference/persistence-and-recovery.md) §2 — the registry
+    schema named `metadata` and `policy` (they are `metadataJson` and `policyJson`), a policy field
+    `allowedNetworks` that does not exist, and a `sourceKind` domain neither port declares; it
+    omitted `remoteTerminated`; and it stated an `upload_event` ring per job that **neither port
+    implements**, now kept as a declared gap rather than a schema row.
+  - [`ios-background-transfer.md`](docs/reference/ios-background-transfer.md) and
+    [`platform-constraints.md`](docs/reference/platform-constraints.md) — both said iOS 17 discovers
+    server support via `Upload-Incomplete`; the header is `Upload-Complete`, and had been in every
+    dialect and in `wire-protocol.md` all along. Both also described TUSKit as a dependency of this
+    repository, which [`licensing.md`](docs/reference/licensing.md) has always said it is not.
+  - [`android-build.md`](docs/reference/android-build.md) — told the reader to run
+    `gradle :android:assemble`, the unreproducible form that `gradle-wrapper.properties` and
+    `.github/workflows/ci.yml` both carry a comment against.
+  - [`licensing.md`](docs/reference/licensing.md) — the dependency audit still listed
+    `androidx.core:core-ktx` as a declared Android runtime dependency after the sweep above deleted
+    the declaration. Transitive and Apache-2.0 either way, so the licence conclusion is unchanged;
+    the audit's reproducibility was not.
+- **Three facts that were stated twice and disagreed** are now stated once, with the other side
+  pointing at it: the count of pre-existing Swift-concurrency errors in the `ios` job (
+  [`conformance-vectors.md`](docs/reference/conformance-vectors.md) said three,
+  [`continuous-integration.md`](docs/reference/continuous-integration.md) said two — CI run
+  `33044503283` says two); the pinned tusd version (`platform-constraints.md` said v2.10.0, the
+  Compose digest pin and two other documents say v2.4.0); and whether TUSKit is a dependency.
+
 ### 2026-08-27
 
 #### Added

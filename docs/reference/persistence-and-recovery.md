@@ -1,6 +1,6 @@
 # Persistence and recovery
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 How a job survives the app being closed, killed, crashed, updated, or the device rebooted —
 and how it is found again on the next launch.
@@ -34,35 +34,47 @@ cancel it" — falls out of doing that join correctly on every process start.
 
 ## 2. Job registry schema
 
-One table, one row per job. Column names below are normative; storage engine is not.
+One table, one row per job. **Field names below are normative; the storage engine is not** — and
+the two ports take that literally. Kotlin's `UploadJob` is a Room `@Entity`, so each field is a
+real column of `upload_job`. Swift's `SQLiteUploadStore` stores the whole `Codable` job as a
+`payload BLOB` in `upload_jobs` and projects only what it must query on (`state`,
+`remote_terminated`, `staged_path`, `owner_token`, `lease_expires_at`, `completed_at`). Both carry
+every field below.
 
-| Column | Notes |
+| Field | Notes |
 |---|---|
 | `id` | client-generated UUID. **The stable public handle.** Never derived from the URL |
 | `groupId` | nullable batch label |
-| `sourceKind` | `FILE` · `PHASSET` · `CONTENT_URI` · `STAGED_COPY` |
+| `sourceKind` | Kotlin: `FILE` · `CONTENT_URI` · `STAGED_COPY`. Swift: `file` · `photosAsset` · `securityScoped` · `stagedCopy`. The union is the platform's, not a drift — there is no `PHAsset` on Android and no `content://` on iOS |
 | `sourceUri` | original locator, kept even after staging |
 | `stagedPath` | non-null **only** when a copy was unavoidable (see §3) |
 | `sizeBytes`, `contentType` | |
 | `fingerprint` | `hash(sourceUri, sizeBytes, mtime, volumeId)` — **not** a content hash (§6) |
 | `endpoint`, `uploadUrl`, `uploadExpiresAt` | `uploadUrl` null until `CREATING` succeeds |
-| `metadata` | JSON → `Upload-Metadata` |
-| `state`, `pauseReason`, `blockReason`, `errorClass`, `errorDetail` | |
+| `metadataJson` | JSON → `Upload-Metadata` |
+| `state`, `pauseReason`, `blockReason`, `errorClass`, `errorDetail` | domains in [state-machine.md §1 and §3](state-machine.md) |
 | `bytesTransferred` | display hint only |
 | `serverOffset`, `serverOffsetAt` | authoritative; only ever written from an acked response |
 | `attemptCount`, `nextAttemptAt` | |
 | `reservedBytes` | storage reservation held; 0 when none |
 | `ownerToken`, `leaseExpiresAt` | single-runner lease (state-machine I8) |
-| `policy` | JSON: `allowedNetworks`, `requiresCharging`, `maxAttempts`, `priority` |
+| `policyJson` | JSON `UploadPolicy`: `allowsExpensiveNetwork`, `allowsConstrainedNetwork`, `requiresCharging`, `maxAttempts`, `priority`, `isDiscretionary` |
+| `remoteTerminated` | `false` on a `CANCELED` job whose `DELETE` has not landed yet — the deferred-cleanup flag of [state-machine.md §6](state-machine.md) |
 | `createdAt`, `updatedAt`, `completedAt` | |
-| `schemaVersion` | migration guard across app updates |
+| `schemaVersion` | migration guard across app updates. `1` in both ports |
 
-Plus an append-only, size-bounded `upload_event` ring per job (state, reason, timestamp, HTTP
-status). Field-debugging a stalled 4 GB upload without a local history is guesswork, and this
-is cheap.
+**Completed jobs are retained**, not deleted, for a configurable window — `pruneCompleted(before:)`
+on both stores, called by nothing on a timer yet. "Did my video actually upload last Tuesday?" is a
+real question, and a registry that forgets successes cannot answer it.
 
-**Completed jobs are retained**, not deleted, for a configurable window. "Did my video actually
-upload last Tuesday?" is a real question, and a registry that forgets successes cannot answer it.
+### Specified here, implemented nowhere: the `upload_event` ring
+
+This document used to state, unqualified, that the schema carries "an append-only, size-bounded
+`upload_event` ring per job (state, reason, timestamp, HTTP status)". **It does not.** Neither port
+declares such a table; `grep -rn upload_event ios/Sources android/src` returns nothing. The
+argument for it stands — field-debugging a stalled 4 GB upload with no local history is guesswork —
+so it is kept here as a stated gap rather than deleted, and moved out of the schema table so that
+nobody reads it as something they can query today.
 
 ---
 
@@ -166,3 +178,29 @@ via the enqueue options and takes responsibility for it.
 `schemaVersion` is per row, not per database. An app update that changes the job model must
 migrate rows in place; it must **never** drop the table. Dropping it silently orphans every
 in-flight server resource, since `uploadUrl` lives nowhere else on the device (§4).
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** §2 was read field-by-field against
+`android/src/main/kotlin/dev/amphora/model/UploadJob.kt`,
+`ios/Sources/Amphora/Model/UploadJob.swift`, and the `CREATE TABLE` in
+`ios/Sources/Amphora/Store/SQLiteUploadStore.swift`. It named fields that do not exist and omitted
+one that does.
+
+| §2 said | The tree says | Resolution |
+|---|---|---|
+| `metadata` | `metadataJson` in both ports | Renamed |
+| `policy` — JSON `allowedNetworks`, `requiresCharging`, `maxAttempts`, `priority` | `policyJson`. `UploadPolicy` has no `allowedNetworks`; the network settings are two booleans, `allowsExpensiveNetwork` and `allowsConstrainedNetwork`, and `isDiscretionary` was missing | Renamed and re-listed |
+| `sourceKind` is `FILE · PHASSET · CONTENT_URI · STAGED_COPY` | Neither port declares that set. Kotlin has three, Swift four, and Swift's Photos case is spelled `photosAsset`. `securityScoped` was missing entirely | Both domains are now listed, per port, with why they differ |
+| *(no row)* | `remoteTerminated` is a persisted field in both ports and is what makes deferred cancellation survive a restart | Added |
+| The schema carries an `upload_event` ring | No such table in either port | Moved out of the table into a section that says plainly it is unimplemented. **Not deleted** — the reason for wanting it is still good, and a stated gap is useful where a false schema row is not |
+
+One softened claim: **"completed jobs are retained for a configurable window"** implied a running
+mechanism. `pruneCompleted(before:)` exists on both stores and, as of this date, has no caller
+anywhere in the tree — retention is currently unbounded by omission rather than by policy.
+
+**What this pass did not do.** It did not check that the *reconciler* algorithm in §5 matches
+`Reconciler.swift` / `Reconciler.kt` step for step; §2 was the section whose claims were
+mechanically checkable against a type declaration, and that is the check that was run.

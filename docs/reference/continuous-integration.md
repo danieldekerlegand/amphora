@@ -1,6 +1,6 @@
 # Continuous integration
 
-> **Status:** Live · **Updated:** 2026-08-26 · **Owner:** Amphora
+> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Amphora
 
 Until 2026-08-26 this repository had **no git remote**. `.github/workflows/ci.yml` had existed
 for weeks and had never executed on any machine, which made every Android claim in this
@@ -200,8 +200,10 @@ Two gaps remain, and both are recorded rather than papered over:
 
 - `verify.sh` runs `swift build --package-path ios`; CI runs it with `-Xswiftc -warnings-as-errors`.
   The `ios` job is red on Swift-concurrency errors that the local toolchain does not surface at all,
-  so a green local build does not predict a green run. As observed on run 33041928703, two remain
-  and nothing in this repository owns either:
+  so a green local build does not predict a green run. **This table is the single home for that
+  count** — anywhere else that needs it links here, because it changes as the errors are fixed.
+  First observed on run 33041928703 and re-read on 2026-09-03 from run 33044503283, the most recent
+  run of any branch; two remain, and nothing in this repository owns either:
 
   | Where | Error |
   |---|---|
@@ -219,3 +221,22 @@ Two gaps remain, and both are recorded rather than papered over:
 
 A green `verify.sh` therefore does not predict a green run. Check `gh run list` before believing a
 branch is clean.
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** Nothing in this document was found wrong. It
+was read against `.github/workflows/ci.yml` and `.chief/verify.sh` — the five job names, the four
+triggers, the five rows of the vectors table, the three assertions of `verify-skip-policy.sh`, and
+both halves of the known-divergence list all hold.
+
+Two notes rather than corrections:
+
+- **The two Swift-concurrency errors were re-observed**, not merely carried forward.
+  `gh run view 33044503283 --log-failed` on 2026-09-03 prints exactly the two rows above, at
+  `NetworkGovernor.swift:23:26` and `TUSKitTransport.swift:27:17`. The run is from 2026-08-27; no
+  branch has been pushed since, so it remains the newest evidence there is.
+- **[conformance-vectors.md](conformance-vectors.md) used to restate the count as "three" and was
+  wrong.** It now links here instead of carrying its own copy. If these errors are fixed, this
+  table is the only place that needs editing.

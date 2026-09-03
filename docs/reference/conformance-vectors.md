@@ -1,6 +1,6 @@
 # Conformance vectors — what they prove, and what they do not
 
-> **Status:** Draft · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 `Tests/Conformance/vectors.json` is one file, read by both ports, and it exists for one reason: to
 stop the Swift and Kotlin state machines drifting apart. This document records its **scope**, so
@@ -157,10 +157,12 @@ anchor text has gone missing is a **failure**, not a warning: a control that sil
 nothing would report that the vectors caught a divergence that was never introduced.
 
 Both ports run it in CI — `--port swift` in the `ios` job, `--port kotlin` in the `android` job.
-The `ios` job currently fails at its first step on three pre-existing Swift-concurrency errors
-(recorded under [known divergence](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)), so the Swift half
-does not yet execute on the runner; it is run locally instead, and the story notes record what it
-printed.
+The `ios` job currently fails at its first step on pre-existing Swift-concurrency errors, so the
+Swift half does not yet execute on the runner; it is run locally instead, and the story notes
+record what it printed. **How many errors, where, and against which run id is stated in exactly
+one place** —
+[Continuous integration § known divergence](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
+— because that count changes as they are fixed and a second copy of it drifts.
 
 ---
 
@@ -168,10 +170,35 @@ printed.
 
 1. Add the row to `Tests/Conformance/vectors.json`. One file — never a per-platform copy;
    `Tests/Conformance/check-single-fixture.sh` fails the build on a second one.
-2. Bump `EXPECTED_VECTOR_COUNT` (or `EXPECTED_I6_VECTOR_COUNT`) in **both**
-   `ios/Tests/AmphoraTests/ConformanceTests.swift` and
-   `android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt`.
+2. Bump the expected count in **both** ports — `expectedVectorCount` /
+   `expectedI6VectorCount` in `ios/Tests/AmphoraTests/ConformanceTests.swift`, and
+   `EXPECTED_VECTOR_COUNT` / `EXPECTED_I6_VECTOR_COUNT` in
+   `android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt`. The two spellings are each
+   port's own convention; there is no shared constant.
 3. If the row asserts a field neither port reads today, teach both ports to read it — and move it
    out of §3.1 above. A row whose expectations nobody checks is documentation wearing a test's
    clothes.
 4. Changing the fixture's *shape* means bumping `schemaVersion` in the file and in both ports.
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** Every count in §1, §2 and §3.1 was
+re-derived from `Tests/Conformance/vectors.json` and from the two test files, and all of them held:
+40 / 3 rows, and `serverOffset` 6, `attemptCount` 6, `bytesTransferred` 2, `terminateRemote` 2,
+`blockReason` 5, `errorClass` 3, `pauseReason` 2, `remoteTerminated` 2, `uploadUrl` 2, `noOp` 2,
+`persistBeforeTransfer` 1, `cleanupPending` 1, `fingerprint` 1, `sizeBytes` 1, `uploadExpiresAt` 1,
+`requiredEffects` 1. Two things did not hold:
+
+- **§4 said the `ios` job fails on "three" Swift-concurrency errors;
+  [continuous-integration.md](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
+  said two.** Two documents, one fact, and they disagreed. The CI doc is right: CI run
+  `33044503283` (2026-08-27, the most recent) reports exactly two distinct errors,
+  `Governor/NetworkGovernor.swift:23:26` and `Transport/TUSKitTransport.swift:27:17`. The third was
+  retired by the I6 seam, which the CI doc already explains. **This document no longer states the
+  count at all** — it points at the one home, because a number that changes as the errors are fixed
+  is the kind that drifts the moment it is copied.
+- **§5 named `EXPECTED_VECTOR_COUNT` as if both ports spelled it that way.** That is the Kotlin
+  constant; Swift's is `expectedVectorCount`. A reader following step 2 literally would have
+  grepped the Swift file and found nothing.

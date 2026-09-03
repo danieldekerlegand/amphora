@@ -13,7 +13,9 @@ Started: Thu Sep  3 05:55:44 CDT 2026
 - **The banner regex.** `head -5 "$f" | grep -q '^> \*\*Status:\*\*.*\*\*Updated:\*\*.*\*\*Owner:\*\*'`
   — the banner is always line 3, a blockquote, immediately after the `# Title` and a blank line.
 - **`verify.sh` exits 0 on a skip.** Never read exit 0 as green. Read the summary line. On these
-  machines it is always `4 passed, 1 skipped, 0 failed` with `Gradle build — no JDK on PATH`.
+  machines the skip is always `Gradle build — no JDK on PATH` and failures are always `0`; the
+  passed count is `3` or `4` depending on whether `packages/react-native/node_modules` exists
+  (`TypeScript dependency install` is conditional on its absence). Quote the line you saw.
 
 ---
 
@@ -65,3 +67,75 @@ one Android-adjacent *document* and touched no Kotlin, so the skip conceals noth
 - **The three dead-code docs cross-reference each other by anchor heavily** (`dead-code-inventory`,
   `-removal`, `-undecidable`: 25 inter-document anchor links). Renaming any heading in those three
   breaks links silently. Re-run the anchor check after touching them.
+
+---
+
+## US-2 — Content that describes a tree that moved (done)
+
+**Method: read the tree, then read the docs against it.** Not the reverse. Four mechanical sweeps
+first (backticked paths → filesystem; backticked `CamelCase` identifiers → git-tracked sources;
+every stated count → the fixture and both test files; the four things tasklist `900` removed →
+grep), then a human read of the three docs the sweeps cannot reach (the state-machine spec, the
+registry schema, the two platform docs).
+
+**10 drifted claims across 8 reference docs.** In severity order:
+
+| Doc | Was | Is |
+| --- | --- | --- |
+| `state-machine.md` §3 | `SetPriority` + 5 phantom environment signals; 5 error classes; no `Schedule`/`SourceResolved`/`SourceMissing` | The implemented 21-name event set; 7 classes |
+| `persistence-and-recovery.md` §2 | `metadata`, `policy`, `allowedNetworks`, a `sourceKind` domain neither port has, no `remoteTerminated`, an `upload_event` ring | Real field names; both `sourceKind` domains; the ring moved out of the schema and labelled unimplemented |
+| `ios-background-transfer.md`, `platform-constraints.md` | `Upload-Incomplete`; "the TUSKit dependency" | `Upload-Complete`; `TUSKitTransport` is this repo's own file, TUSKit is not a dependency |
+| `platform-constraints.md` §4 | tusd v2.10.0 | The Compose digest pin (v2.4.0) is the authority |
+| `conformance-vectors.md` §4, §5 | "three" concurrency errors; `EXPECTED_VECTOR_COUNT` in both ports | Links to the one home; both spellings named |
+| `android-build.md` | `gradle :android:assemble` | `./gradlew`, with the wrapper pin and why |
+| `licensing.md` | `androidx.core:core-ktx` declared; 5,951 lines | Four `androidx` artifacts; 5,907, with the command |
+| `state-machine.md` §1, §3 | Kotlin's `BlockReason`; `LOCAL` → "`BLOCKED` or `FAILED`" | Per-port table; `LOCAL` → always `BLOCKED(STORAGE_LOW)` |
+
+**Three facts stated twice and actually disagreeing** — the criterion's real target, and all three
+were live contradictions, not merely redundancy: the `ios` job's concurrency-error count (3 vs 2;
+CI run `33044503283` says 2), the pinned tusd version (v2.10.0 vs v2.4.0), and whether TUSKit is a
+dependency (`ios-background-transfer.md` said yes, `licensing.md` said no; `Package.swift` says no).
+Each now has one home with the others pointing at it. The I6 disk numbers and the three-outcome
+verify table are also stated in more than one place, but they *agree*; those got pointers to their
+home rather than deletion, because `README.md` and `CLAUDE.md` exist to be read first.
+
+**What held.** Worth recording, because a sweep that only reports defects reads as if everything
+else was unchecked: 40/39/1/3 vector counts; all 16 per-key row counts in `conformance-vectors.md`
+§3.1, re-derived from the fixture; 46 Swift cases; the 4 KiB / 0 KiB I6 measurements and the 256 KiB
+budget, 50 ms / 25 ms sampling behind them; the 5 CI jobs, 4 triggers and 3 skip-policy assertions;
+every `AmphoraUploader` signature in the iOS guide; the whole `wire-protocol.md` dialect table.
+
+Files changed: 8 under `docs/reference/`, plus `CLAUDE.md` (I6 + verify-table pointers, and a new
+convention bullet in §6), `README.md` (I6 pointer), `CHANGELOG.md` (a `#### Fixed` block under
+2026-09-03).
+
+**Gate:** `.chief/verify.sh` → `3 passed, 1 skipped, 0 failed`, exit 0. Swift build PASS, Swift
+tests PASS (`46 passed`), TypeScript typecheck PASS. The skip is `Gradle build — no JDK on PATH`.
+Per CLAUDE.md §3 this is **not** green. Also `Tests/Conformance/check-single-fixture.sh` exit 0, and
+the link sweep re-run after every edit: 22 files, 0 dead links, 0 dead anchors, 17/17 banners.
+
+### Learnings for future iterations
+
+- **`verify.sh` prints `3 passed, 1 skipped` here, not `4`.** The Codebase Patterns note above says
+  4; that is only true when `packages/react-native/node_modules` is absent, because
+  `TypeScript dependency install` is conditional on it. Both are `0 failed`. Read the summary line,
+  not a remembered number.
+- **The mechanical sweeps found almost nothing; the reading found everything.** Every path, every
+  identifier, and every count in the docs already resolved. All 10 defects were *semantic* — a name
+  that exists but means something else, a set that is missing a member, a version that is real but
+  not the one pinned. A link checker would have reported this tree clean. Do not let a green
+  automated sweep stand in for reading a spec against a type declaration.
+- **`docs/reference/state-machine.md` is normative and had never been read back against a port.**
+  Where a doc claims to be the specification, the drift is worse than ordinary staleness, because a
+  reader has no reason to doubt it and the ports agreeing with *each other* hides it completely.
+  The fixture is not a check on this doc: it encodes the ports' behaviour, so the doc can be wrong
+  while all 40 vectors pass. That is what happened.
+- **`## Corrections` sections are now a convention** (CLAUDE.md §6). Nine docs carry one. Each also
+  states what its pass did *not* check — US-3 owes the same for the sweep as a whole.
+- **US-3's archive question, answered in advance: nothing here warranted archiving.** Every doc read
+  in this pass is current and load-bearing; the three dead-code docs look historical but are the
+  record of a decision, which this portfolio keeps deliberately. `docs/archive/` still does not
+  exist and git cannot commit it empty — US-3 should say that rather than create a placeholder.
+- **Two ADR slots are named and unfilled** — `0001-adopt-rufh-build-clients.md` and
+  `0002-ios-deployment-target.md`, both cited from `docs/README.md` and now also from
+  `ios-background-transfer.md` §4. They are *declared outstanding*, not dead links; leave them.

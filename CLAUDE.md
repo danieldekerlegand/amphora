@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Status:** Live · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 Orientation for a session — human or agent — working in this repository. It covers the things that
 are **not** derivable by reading the tree: the one design commitment that must survive contact with
@@ -57,11 +57,16 @@ materialises, and `Tests/Conformance/drift-control.sh` drives a deliberate viola
 ports naming `i6-01-fresh-transfer`. The vectors will stop you before review does.
 
 Measured, not read off the source: peak extra disk during an 8 MiB transfer is **4 KiB** (Swift) and
-**0 KiB** (Kotlin). A remainder-staging transport would have needed ≈2816 KiB.
+**0 KiB** (Kotlin). A remainder-staging transport would have needed ≈2816 KiB. Those three numbers
+have one home — [the tusd guide's storage section](docs/guides/tusd-integration.md#the-storage-claim-is-measured-not-asserted),
+which states the sampling method behind them. This is a quotation; re-measure there, not here.
 
 ## 3. `SKIPPED` is not `PASS` — and it is the local default
 
-`.chief/verify.sh` reports **three** outcomes, deliberately:
+`.chief/verify.sh` reports **three** outcomes, deliberately. The full policy, the counterfactual
+that enforces it, and the two known ways `verify.sh` differs from CI live in
+[Continuous integration § a skipped check is not a passing check](docs/reference/continuous-integration.md#a-skipped-check-is-not-a-passing-check);
+what follows is the short form you need before your first run.
 
 | Outcome | Meaning |
 |---|---|
@@ -140,6 +145,12 @@ integration/tusd/        the real-wire harness: tusd v2 + MinIO via Docker Compo
 - **Docs are an evidence ledger, not prose.** State the verdict, name where it was read from, and
   never upgrade an unverified cell to make a table look finished. Every reference doc carries a
   `> **Status:** … · **Updated:** … · **Owner:** …` line.
+- **A doc that drifted gets a `## Corrections` section, not a silent edit.** Dated, naming the
+  tasklist, saying what the document *said*, what the tree says, and what was read to tell them
+  apart — and saying what the pass did **not** check. A silently fixed doc teaches nobody why it
+  drifted, and the next reader has no way to tell a claim that was verified from one that was
+  merely never questioned. Nine files carry one as of 2026-09-03; `state-machine.md` is the
+  worked example.
 - **Index every new doc in [`docs/README.md`](docs/README.md).** That file states *"unlinked is
   unreachable"*; adding a document without indexing it is an incomplete change.
 - **One `vectors.json`, no per-platform copy.** A second copy keeps both suites green while they

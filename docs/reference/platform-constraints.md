@@ -1,6 +1,6 @@
 # Platform constraints
 
-> **Status:** Draft · **Updated:** 2026-08-19 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 Hard limits discovered during the build-vs-adopt research. Each one shapes the design; none of
 them is negotiable, and several are the reason an off-the-shelf client cannot be used as-is.
@@ -20,9 +20,11 @@ files), this settles the iOS transport: a single whole-file upload task, resumed
 
 **iOS 17+ gives resumption natively.** `cancelByProducingResumeData()` /
 `uploadTask(withResumeData:)` implement the IETF resumable-upload draft, discover server support
-via the `Upload-Incomplete` header, and — on background sessions — resume automatically across
-interruptions with no app code. Below iOS 17, the system retries **from the beginning**, so
-TUSKit is the fallback transport there.
+via the `Upload-Complete` header and the `104` handshake, and — on background sessions — resume
+automatically across interruptions with no app code. Below iOS 17, the system retries **from the
+beginning**, so `TUSKitTransport` is the fallback transport there — this repository's own
+manual-offset transport, not the TUSKit library, which is not a dependency here (see
+[licensing.md](licensing.md)).
 
 **Configuration that matters:**
 - `isDiscretionary = true` lets the system pick a good moment — but uploads may be deferred for
@@ -36,9 +38,9 @@ directory is never purged while your app is running" guarantee does not help a b
 upload — the app is *suspended*, which is precisely when purging happens. Check headroom with
 `volumeAvailableCapacityForImportantUsage`.
 
-**No parallel parts.** TUSKit does not implement the concatenation extension, and the native
-iOS 17 path is single-stream by construction. This caps throughput on fast networks. Accepted:
-storage safety was the requirement that failed in production, throughput was not.
+**No parallel parts.** Neither iOS transport implements the tus concatenation extension, and the
+native iOS 17 path is single-stream by construction. This caps throughput on fast networks.
+Accepted: storage safety was the requirement that failed in production, throughput was not.
 
 ---
 
@@ -98,7 +100,10 @@ TurboModule. The state machine lives in Swift and Kotlin.
 
 ## 4. Server (tusd)
 
-- tusd **v2.10.0** speaks tus 1.0 and the IETF draft, with an S3 backend.
+- tusd v2 speaks tus 1.0 and the IETF draft, with an S3 backend. The version this repository
+  actually runs against is pinned by **digest** in `integration/tusd/docker-compose.yml` —
+  **v2.4.0** as of 2026-09-03. The Compose file is the authority; anything that names the version
+  is quoting it.
 - **No Expiration extension** — abandoned uploads need `tusd-cleaner` on a schedule or an S3
   `AbortIncompleteMultipartUpload` lifecycle rule.
 - **No enumeration endpoint** — see `persistence-and-recovery.md` §4 for the control-plane
@@ -119,3 +124,33 @@ Pin the interop version in the transport layer and surface a mismatch as
 `FAILED(PROTOCOL_VERSION)` with a distinct code, so a server upgrade that outruns a deployed
 app population is diagnosable from crash telemetry rather than presenting as generic upload
 failure.
+
+---
+
+## Corrections
+
+**2026-09-03, tasklist `901-docs-tell-the-truth`.** §1's iOS configuration list, §2's Android 15
+`dataSync` budget and the bounded-worker response, §3, and §5's interop-version pin were read
+against the tree and hold. Three claims did not.
+
+- **`Upload-Incomplete` is not the header.** It is `Upload-Complete`, in both dialects and in
+  `wire-protocol.md`. Same correction as
+  [ios-background-transfer.md](ios-background-transfer.md#corrections); these were the last two
+  places carrying the early-draft spelling.
+- **"TUSKit is the fallback transport there" named a library this repository does not depend on.**
+  The fallback is `TUSKitTransport`, a file in this tree that does not import TUSKit;
+  `ios/Package.swift` declares zero external packages, as [licensing.md](licensing.md) records. The
+  adjacent "TUSKit does not implement the concatenation extension" had the same problem — the
+  statement that matters is that *neither of this repository's iOS transports* implements it — and
+  is restated that way.
+- **§4 said tusd "v2.10.0"; the harness pins v2.4.0**, by digest, and
+  [licensing.md](licensing.md) and [the tusd guide](../guides/tusd-integration.md) both say v2.4.0.
+  Three documents, one version, and this was the odd one out. It now names the Compose pin as the
+  authority instead of carrying a version of its own; the other two already cite that file, and
+  their copies were correct.
+
+**What this pass did not do.** It did not re-verify the platform behaviours themselves — the
+Android 15 FGS budget, the `Caches` purge semantics, the 5 MB S3 part minimum. Those are claims
+about other people's systems, sourced from their documentation, and nothing in this repository can
+check them. See [environment-evidence.md](environment-evidence.md) for which of them have ever been
+observed here.
