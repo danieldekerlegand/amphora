@@ -1,259 +1,89 @@
-# Chief Progress — 130-roadmap-and-license
-Started: Thu Aug 27 01:10:50 CDT 2026
+# Chief Progress — 900-dead-code-paydown
+Started: Thu Sep  3 05:27:52 CDT 2026
 ---
 
 ## Codebase Patterns
 
-- **Docs are an evidence ledger, not prose.** `docs/reference/environment-matrix.md` and
-  `verification-record.md` set the register the whole repo writes in: state the verdict, name
-  where it was read from, and refuse to upgrade an unverified cell to make a table look complete.
-  New reference docs should carry the same `> **Status:** … · **Updated:** … · **Owner:** …`
-  header line and be linked from `docs/README.md` — that file states "unlinked is unreachable",
-  so adding a doc without indexing it is an incomplete change.
-- **The verify gate reports THREE outcomes.** `.chief/verify.sh`: PASS / FAIL / SKIPPED. On this
-  machine `Gradle build` always SKIPS (no JDK on PATH) and that is not a pass — say so in notes
-  rather than writing "green". Swift + TypeScript do run locally. `CI=true` flips SKIPPED to
-  FAIL, so anything touching `android/` is genuinely verified only in CI.
-- **Swift tests are an `.executableTarget`, not a test target.** `swift test` reports "no tests
-  found"; the real command is `swift run --package-path ios AmphoraPathTests` (currently 46
-  passed). Do not conclude the suite is empty from `swift test`.
-- **Bash tool cwd persists across calls in this environment.** A `cd` in one call leaks into the
-  next and makes relative paths resolve outside the worktree. Anchor every call with an absolute
-  `W=` path.
+- **`verify.sh` local baseline is `3 passed, 1 skipped, 0 failed`.** The skip is
+  `Gradle build — no JDK on PATH`. Per CLAUDE.md §3 that is NOT green: every Kotlin claim
+  in a change rests entirely on CI. Say "3 passed, 1 skipped" in notes, never "green",
+  unless the change touched no Kotlin (then say so explicitly).
+- **Four cheap CI gates run locally with no toolchain** and are worth running on any change:
+  `Tests/Conformance/check-single-fixture.sh`, `.chief/tests/verify-skip-policy.sh`,
+  `npm --prefix packages/react-native run check:control-surface`,
+  `Tests/Conformance/drift-control.sh --port swift`. The kotlin drift control needs a JDK.
+- **Every new doc must be indexed in `docs/README.md`** ("unlinked is unreachable") and carry a
+  `> **Status:** … · **Updated:** … · **Owner:** …` line. Bump the index's own Updated date too.
+- **Reference-counting recipe used all through 900**, reusable for any symbol sweep:
+  `grep -rhoE '(struct|class|enum|protocol|actor) [A-Z][A-Za-z0-9_]*' ios/Sources | awk '{print $2}' | sort -u`
+  then per name `grep -rn --include='*.swift' -w <name> ios/ | grep -v '<decl form>' | wc -l`.
+  Kotlin equivalent over `android/src`. Refcount 0 or 1 is the shortlist, not the answer.
 
 ---
 
-## US-1 — The repository grants permission to use it (done)
+## 2026-09-03 — US-1: An inventory, measured before anything is removed
 
-**What I did.** Added `LICENSE` (MIT, © 2026 Daniel DeKerlegand) and recorded the reasoning and the
-audit behind it in a new `docs/reference/licensing.md`.
+WHAT I DID. Swept the whole tree for dead, stale and duplicated code and wrote the result to
+`docs/reference/dead-code-inventory.md` (289 lines), indexed in `docs/README.md`. **Deleted
+nothing** — US-1 is the measurement, US-2 is the removal.
 
-The choice was not free: `packages/react-native/package.json` had declared `"license": "MIT"` since
-the package was created, with no `LICENSE` file behind it — npm would have rendered "MIT" on the
-package page while the repository granted nothing. MIT makes the existing declaration true instead
-of introducing a new position. Apache-2.0 was considered and rejected in writing: its patent grant
-has nothing to cover here because the repo deliberately re-specifies no protocol.
+FILES CHANGED: `docs/reference/dead-code-inventory.md` (new), `docs/README.md` (index entry +
+Updated date). Commit `08fe3b0`.
 
-**The audit was actually run, not asserted.** Criterion 2 says "verify that rather than assuming
-it", so every licence verdict was read from a source:
+VERIFY: `.chief/verify.sh` → 3 passed, 1 skipped, 0 failed (PASS Swift build, PASS Swift tests
+46 passed, PASS TypeScript typecheck, SKIPPED Gradle — no JDK). Plus all four cheap CI gates
+green. Docs-only, no Kotlin touched, so the Gradle skip strands nothing here.
 
-- iOS: zero external dependencies (`ios/Package.swift`). `TUSKitTransport` does **not** import
-  TUSKit — the name records a role, not a linkage.
-- Android runtime deps (androidx.annotation/core-ktx/room-runtime/room-ktx/work-runtime-ktx,
-  kotlinx-coroutines-android, okhttp): Apache-2.0, read from `<licenses>` in the POMs on Google
-  Maven and Maven Central. **AndroidX POMs are NOT on Maven Central** — fetch them from
-  `https://dl.google.com/dl/android/maven2/…` or you get an empty answer and might wrongly
-  conclude "no licence declared".
-- `junit` 4.13.2 is EPL-1.0 (weak copyleft) and `org.json:json:20240303` is Public Domain — both
-  `testImplementation` only, so neither reaches a consumer's classpath. The org.json POM confirmed
-  the historical "Good, not Evil" JSON License clause is gone in this version.
-- `package-lock.json` records a `license` field for all 499 entries, which makes the JS tree
-  auditable offline: 426 MIT, 38 ISC, 12 BSD-3, 11 Apache-2.0, 6 BSD-2, 2 0BSD, 1 CC-BY-4.0
-  (`caniuse-lite`, data), 1 `(MIT OR CC0-1.0)`, 1 `(BSD-3-Clause OR GPL-2.0)` (`node-forge`, dual).
-  Zero unilateral copyleft. The published package declares no runtime `dependencies` at all.
-- **The one real finding: MinIO is AGPL-3.0**, pinned in `integration/tusd/docker-compose.yml`. It
-  is an unmodified upstream container run as a separate process, never linked or distributed, so
-  §13 is not engaged — but the doc states it explicitly rather than claiming "no copyleft
-  anywhere", because a reader who greps will find it.
-- `tus-js-client` and TUSKit appear **only in prose** (README, two docs). Neither is a dependency.
+THE SHAPE OF THE ANSWER — 6 genuinely dead, 8 deliberately-unexercised, 3 duplications,
+4 undecidable classes. Full detail is in the doc; what matters for the next iterations:
 
-**File-level convention** (criterion 3 allows headers *or* a stated convention — took the latter,
-deliberately): root `LICENSE` is authoritative; each *distributable manifest* carries the SPDX
-identifier, since that is what registries and SBOM scanners read; new source files inherit
-silently with no per-file header. Per-file headers on 5,951 lines would drift, and a repo with
-headers on 80% of its files is less legible about its licence than one with none. Added
-`// SPDX-License-Identifier: MIT` to `ios/Package.swift` (after the tools-version line, which must
-stay first) and `android/build.gradle.kts`; `package.json` already had the field.
+**US-2 should start from §1 and expect it to shrink.** The six §1 findings are NOT equal:
+- `loadResumeData` (§1.1) is the only one with a real cost attached, and it comes with a trap:
+  the *write* half (`storeResumeData`, called at `DefaultUploadEngine.swift:298`) is live and
+  leaks disk into a `resume_data` table nothing reads. Do NOT delete the writer to make the
+  pair symmetric — that is a defect to report, not code to remove.
+- `WireDialect.Rufh` Kotlin (§1.3) is dead by search and **contested by `wire-protocol.md`**,
+  which documents it as one of two named dialects. Swift's `RufhDialect` is live. This needs a
+  human ruling; do not delete it on the strength of a refcount.
+- §1.4/§1.5/§1.6 are Kotlin and **cannot be verified on this machine at all** (no JDK). Any
+  removal there is a CI-only claim. Weigh that against how little they are worth.
+- §1.6 (three redundant `@RequiresApi`) is marginal and strands `androidx.annotation` if fully
+  removed. Probably leave it; record why, which is what US-2's third criterion asks for.
 
-**Files changed.** `LICENSE` (new), `docs/reference/licensing.md` (new), `docs/README.md` (indexed
-it, bumped Updated), `README.md` (Licence section), `ios/Package.swift`, `android/build.gradle.kts`.
+**§2 is the more valuable half of the artifact** and is exactly what stops the next sweep
+re-litigating the same files. Read it before touching anything that looks unused. The
+headline: ten `EnumConverters` `@TypeConverter` methods report **zero** call sites each and
+the module cannot compile without them — kapt writes the calls, and kapt runs nowhere here.
 
-**Verification.** `.chief/verify.sh`: 3 passed, 1 skipped, 0 failed. Swift build PASS, Swift tests
-PASS (46 passed: 4 upload-path, 39 state-machine vectors, 3 I6 transport vectors), TypeScript
-typecheck PASS. Gradle build SKIPPED — no JDK on PATH — so the one-line comment added to
-`android/build.gradle.kts` is unverified locally and will first run in CI.
+**§3.1 is the finding with real teeth.** The six-arm HTTP-status→`ErrorClass` table is written
+out verbatim twice in Swift (`BackgroundSessionManager.swift:212-223` and
+`ControlPlaneClient.swift:124-132`), read on two different paths, and covered by no vector. A
+change to one copy ships a build that retries `429` on HEAD and gives up on it mid-transfer
+with every test still green. If US-2 does one refactor, do this one.
 
-### Learnings for future iterations
-
-- **One criterion could not be fully satisfied and the gap is deliberate.** Criterion 3 asks for a
-  convention "consistent with how sibling repos in this portfolio express licence posture." The
-  agent loop forbids reaching outside the worktree into sibling repos, and this repo contains no
-  record of the portfolio standard. The convention was therefore derived from the only in-repo
-  evidence — `package.json`'s pre-existing MIT declaration. If the portfolio standard turns out to
-  be Apache-2.0 or to require per-file headers, `docs/reference/licensing.md` is the single place
-  to change.
-- `docs/reference/licensing.md` forward-links to `ROADMAP.md`, which **US-2 must create** for that
-  link to resolve. Check it before closing US-2.
-- The PRD description is stale in one respect worth knowing before US-3: it says README "still
-  asserts *No conformance vectors yet*". It does not — `120` already rewrote the Status section, and
-  README now says bytes move and the vectors exist and both ports run them. US-3's real remaining
-  target is the `Stubbed:` list (which `60`/`70` closed), plus the new `CLAUDE.md` and
-  `CHANGELOG.md`. Read the README before trusting the description's quotes.
-
----
-
-## US-2 — A roadmap that states the measured position, not the intended one (done)
-
-**What I did.** Wrote `ROADMAP.md` (337 lines) at the repo root, indexed it in `docs/README.md`
-under a new `## Where this is` section, and linked it from `README.md`'s Status section.
-
-**Section 1 is a 14-row evidence table, not prose**, in the register the matrix already uses:
-AUTOMATED / MANUAL-ON-DEVICE / NOT YET VERIFIED, every cell naming the run id, command or file the
-verdict was read from. The honest summary it lands on: the protocol layer, both state machines and
-I6 are measured against a real server; everything *environmental* — the part this library exists
-for — is unverified, and the gate that would stop the measured half regressing is itself red.
-
-**Seven phases**, ordered by dependency and carrying no dates (dates would be intentions, and this
-repo has already paid once for recording an intention as a result): total gate → binding vectors →
-gated real-wire environment → the 40 device cells → storage governor under genuine pressure → RN
-TurboModule host adoption → publication. Each states the observation that closes it. Phase 5 fixes
-the order explicitly: **reproduce the `TransferUtility` bug FIRST**, because a run showing the new
-implementation surviving pressure otherwise proves "the device had enough space", not "the design
-retired the bug". Phase 4 is ranked 1–5 by what each row would retire rather than pretending a
-40/40 sweep is imminent.
-
-**Non-goals**: no web transfer code, no re-specification of the protocol, no chunk temp files. The
-third gets the most space deliberately — it is argued as a commitment, tied to the `Caches`
-reclamation failure mode, and closed with the enforcement (3 I6 vectors + `drift-control.sh` driving
-`i6-01-fresh-transfer` red on both ports) so a future contributor meets the vectors before the
-temptation.
-
-### What was MEASURED, and what was refused
-
-Criterion 5 is the whole point of writing this last, so nothing was rounded up:
-
-- **CI is RED right now.** Run `33044503283` (head `f769a6f`): `ios` FAILURE
-  (`NetworkGovernor.swift:23` captured `var self`; `TUSKitTransport.swift:27` non-`Sendable`
-  `session`), `android` FAILURE (`:android:kaptReleaseKotlin` → `Empty schema file`);
-  `react-native`, `conformance-fixture`, `verify-policy` SUCCESS.
-- **The android failure is NONDETERMINISTIC and the roadmap says so.** The job was SUCCESS at
-  `89583f9` and FAILURE at `f769a6f`, and `git diff 89583f9 f769a6f` is **one JSON tasklist file** —
-  no Kotlin, no Gradle, no Room entity. A gate that flips verdict on identical inputs gates nothing,
-  so phase 1 requires the kapt failure be fixed at the root or reproduced on demand; a green run
-  after a red one on unchanged input closes nothing.
-- **The Swift real-wire run is local-only.** The `ios` job dies at its first step, so `swift run
-  AmphoraPathTests` and the Swift drift control *never execute in CI* — the strongest evidence this
-  repo has for the Swift port is one terminal's output and nothing would notice it regressing.
-- **Gradle SKIPS on this machine**, so every Android claim — including the Kotlin real-wire run —
-  rests on CI alone. When CI is red or flaky, that is the whole Android evidence chain.
-
-### New finding, not recorded anywhere before
-
-**The React Native package is bound to nothing.** `packages/react-native/src/NativeAmphora.ts`
-declares `codegenConfig.name: "AmphoraSpec"`; grepping `AmphoraSpec`, `NativeAmphora`,
-`RCTBridgeModule` and `ReactContextBaseJavaModule` across all `*.swift`, `*.kt`, `*.h`, `*.mm`
-returns **zero hits**, and there is no podspec and no Gradle module for the package. It typechecks,
-builds, passes `check:control-surface` — and is a control surface attached to no bytes. That is
-phase 6, and it was not visible from any existing doc.
-
-**Files changed.** `ROADMAP.md` (new), `docs/README.md` (indexed), `README.md` (linked, plus a
-paragraph naming the unverified half). `docs/reference/licensing.md:95`'s pre-existing forward-link
-`../../ROADMAP.md` now resolves.
-
-**Verification.** Link check across `ROADMAP.md`, `README.md`, `docs/README.md`,
-`docs/reference/licensing.md`: **0 broken**. `.chief/verify.sh`: **3 passed, 1 skipped, 0 failed** —
-PASS Swift build, PASS Swift tests (46 passed), PASS TypeScript typecheck, SKIPPED Gradle (no JDK on
-PATH). Docs-only change touching nothing Android-shaped, so the skip leaves nothing in this story
-unverified.
-
-### Learnings for future iterations
-
-- **Do not trust a single green CI job for Android.** `89583f9` green / `f769a6f` red on a
-  JSON-only diff is a live flake in `:android:kaptReleaseKotlin` (Room schema export, `Empty schema
-  file`). If a future story needs a green android job, re-run before concluding the branch broke it.
-- **`gh run view <id> --json jobs` is the fast way to get per-job conclusions**; `--log-failed |
-  grep -E "error: "` gets the actual compiler errors without paging the whole log.
-- **The PRD description is stale in two more places** (US-1's note caught one): it says "nothing has
-  moved a byte" and "4,868 lines". Bytes moved on 2026-08-27 (`120`), and the ports are ~5,377 lines
-  across `ios/Sources`, `android/src`, `packages/react-native/src` and `Tests`. Read the tree.
-- **US-3 remains.** Its real targets: README's `Stubbed:` list (`60`/`70` closed all three — iOS has
-  `Store/SQLiteUploadStore.swift`, `PHAsset` handling in `SourceResolver`/`StorageGovernor`; Android
-  has the full `store/` and `core/SourceResolver.kt`), plus the new `CLAUDE.md` and `CHANGELOG.md`.
-  For `CLAUDE.md`, the four points its criterion names are all already sourced: no-chunk-temp-files
-  (README + ROADMAP §3), local-SKIP vs CI-FAIL (`continuous-integration.md`), the
-  `.executableTarget`/`swift run AmphoraPathTests` gotcha (Codebase Patterns above), and
-  adopt-the-protocol/build-the-clients (README).
-
----
-
-## US-3 — README stops contradicting the tree (done)
-
-**What I did.** Corrected the one live contradiction left in `README.md`, added `CLAUDE.md` and
-`CHANGELOG.md`, and indexed both.
-
-**The `Stubbed:` line was the contradiction, and it was checked against the tree before being
-rewritten** rather than deleted on the strength of the PRD's word:
-
-- `ios/Sources/Amphora/Store/SQLiteUploadStore.swift` is a real SQLite actor — `CREATE TABLE
-  upload_jobs` / `resume_data`, prepared statements, `sqlite3_busy_timeout`.
-- `Governor/StorageGovernor.swift:64` `writeRemainder`, `:122` `exportPhotosAsset`;
-  `Core/SourceResolver.swift` resolves `ph://` through `PHAsset.fetchAssets`.
-- `android/…/core/SourceResolver.kt:66` `openFileDescriptor` + `Os.lseek` streams a seekable
-  `content://`; `stageIfRequired:84` stages only when it cannot, under the reservation.
-
-So the line was replaced with **what is actually missing** — the RN spec `AmphoraSpec` with no native
-implementation — instead of just removing it. A README that says nothing about the gap is only
-marginally better than one that names the wrong gap.
-
-**"Nothing moves bytes yet" needed no change in either direction.** `120` already rewrote the Status
-section; `grep` across every `*.md` for `Nothing moves` / `nothing has moved` / `No conformance
-vectors yet` returns **0 hits**. Criterion 2 is satisfied by what is already there, and the section
-carries the offsets (Swift `5505024`, Kotlin `6553600`) rather than the claim alone.
-
-**`CLAUDE.md`** (181 lines) covers the four points its criterion names, plus one it does not:
-
-1. no-chunk-temp-files, written as a commitment with the I6 enforcement attached (3 transport
-   vectors + `drift-control.sh` naming `i6-01-fresh-transfer`), so the reader meets the enforcement
-   in the same breath as the temptation;
-2. local-`SKIPPED` vs CI-`FAIL`, including the concrete consequence — Gradle always SKIPs here, so
-   `3 passed, 1 skipped` is **not** green and must not be written up as such;
-3. the `.executableTarget` gotcha, **observed rather than quoted**: `swift test --package-path ios`
-   prints `error: no tests found; create a target in the 'Tests' directory` and **exits 1** (the
-   exit code needed `PIPESTATUS`/a redirect to read — piping to `tail` reports `tail`'s 0);
-4. adopt-the-protocol / build-the-clients, with the three changes that fall on the wrong side of it;
-5. **added, not asked for:** CI's Swift builds `-Xswiftc -warnings-as-errors` and diagnoses
-   concurrency the local toolchain does not, so `verify.sh` can be green while the `ios` job is red
-   on the same commit. That is a live condition today and it is the single most likely way a future
-   session mistakes a local pass for the gate.
-
-**`CHANGELOG.md`** (171 lines), Keep a Changelog 1.1.0 + SemVer. `git tag` is empty and nothing is
-published, so **everything sits under `[Unreleased]`**, subdivided by the date it landed on `main`
-(`2026-08-27` / `08-26` / `08-20`, taken from the merge commits). Two honesty conventions are stated
-in the preamble and then honoured: pre-`08-27` entries are marked **reconstructed** from git history
-and `tasks/chief/completed/`, and tasklist `80` gets a **`Corrected`** subsection recording the false
-record rather than the claim it originally made. It closes with a **Known-red at the time of
-writing** section, so run `33044503283`'s `ios`+`android` FAILURE is something a reader *meets*
-rather than discovers.
-
-**Files changed.** `CLAUDE.md` (new), `CHANGELOG.md` (new), `README.md` (Stubbed→absence, Status
-opener, Layout gained `Tests/Conformance/` + `integration/tusd/`, pointer paragraph), `docs/README.md`
-(indexed both), `ROADMAP.md` (phase 7's "a `CHANGELOG.md` with a real first entry" precondition
-updated now that the file exists; Related gained both links).
-
-**Verification.** `.chief/verify.sh`: **3 passed, 1 skipped, 0 failed** — PASS Swift build, PASS
-Swift tests (46 passed), PASS TypeScript typecheck, SKIPPED Gradle (no JDK on `PATH`). The three
-cheap CI gates were also run directly: `check-single-fixture.sh` PASS, `verify-skip-policy.sh`
-"all assertions passed", `check:control-surface` "spec remains control-surface only". Link check
-across `README` / `CLAUDE` / `CHANGELOG` / `ROADMAP` / `docs/README` / `licensing`: **64 links and
-anchors checked, 0 broken**. Docs-only change touching nothing Android-shaped, so the Gradle skip
-leaves nothing in this story unverified.
-
-### Learnings for future iterations
-
-- **Verify a PRD's quotes against the tree before acting on them.** This tasklist's description was
-  stale in four separate places across the three stories (no-vectors, nothing-moved-a-byte, the line
-  count, and the README quote). Every one was caught by reading the file. The `Stubbed:` claim was
-  the only one that turned out to be true.
-- **`swift test`'s exit code is 1, not 0** — but `swift test … | tail` reports `tail`'s status. If
-  you are recording an exit code as evidence, redirect to a file and read `$?` directly.
-- **`zsh` here has no `timeout(1)`**, and unquoted `--include=*.swift` fails glob expansion before
-  `grep` ever sees it. Quote the pattern.
-- **Anchor links in this repo's docs are checked by nothing.** The 64-link check used for this story
-  was written inline; if anchors keep being added, that check belongs in CI next to
-  `check-single-fixture.sh`.
-- **The tasklist is now complete.** All three stories pass and this file carries no prior-verification-failure
-  block (the marker is deliberately not spelled out here, so a future grep for it finds only a real
-  one). The branch's own gate is green locally; the *repository's* CI gate is
-  red for reasons that predate this branch (two Swift concurrency errors and a nondeterministic
-  kapt failure), and that is recorded in `ROADMAP.md` phase 1 and in `CHANGELOG.md` rather than
-  being absorbed into a story note.
+LEARNINGS FOR FUTURE ITERATIONS.
+- **The tree is disciplined; do not expect a big harvest.** Zero commented-out code blocks in
+  any source language, zero unused Swift imports, one TODO — and that TODO names future work
+  rather than hiding an abandoned path. The findings are small and specific by nature.
+- **A zero refcount answers a different question than "is this dead".** Three of the four
+  blind spots in §4 actually occur here (kapt codegen, framework dispatch, external
+  consumers); only reflection does not. Every framework callback in the tree —
+  `urlSession(...)`, `onAvailable`/`onLost`/`onCapabilitiesChanged`, `onResponse`/`onFailure`,
+  `doWork` — reports zero call sites and is mandatory.
+- **Cross-port asymmetry is the strongest dead signal available in this repo**, and it cuts
+  both ways. `inState` is Kotlin-only and uncalled → stray. `renewLease`/`pruneCompleted` are
+  uncalled in *both* ports → a specified surface, not an accident. And Swift's
+  `stageIfRequired` is uncalled while its Kotlin twin IS called → the **caller** is missing,
+  which is port drift, not dead code.
+- **A REAL BUG FOUND, out of scope here, worth a tasklist.** `DefaultUploadEngine.swift:178-253`
+  never calls `sources.stageIfRequired(job)`, so a `ph://` job hands
+  `URL(fileURLWithPath: "ph://...")` straight to the background session. Kotlin does call its
+  twin at `DefaultUploadEngine.kt:217`. The iOS Photos-asset path is broken.
+- **A second live gap.** `nativeResumeUnavailable` (`DefaultUploadEngine.swift:28`) is never
+  inserted into and never read; the whole five-file `noteNativeResumeSupported` chain is a
+  no-op. `wire-protocol.md:57-63` specifies the behaviour it should implement — the silent
+  degradation to non-resumable upload that the doc calls "a metric worth alerting on".
+- **FOR THE 901 DOCS TASKLIST:** `docs/guides/tusd-integration.md` exists and is **not indexed
+  in `docs/README.md`**, whose own rule is "unlinked is unreachable". Left alone deliberately —
+  900's brief says do not fix docs beyond what a removal strands.
+- Research doc: none for this tasklist (`research` not set). The map above is the substitute.
