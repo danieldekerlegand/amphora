@@ -1,5 +1,7 @@
 # Real tusd integration
 
+> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+
 The wire layers are exercised against the pinned server and an S3-compatible backend by
 [`integration/tusd/run.sh`](../../integration/tusd/run.sh). The environment uses tusd v2.4.0,
 MinIO as the S3 backend, and fixed credentials that are local to the disposable Compose stack.

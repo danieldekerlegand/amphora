@@ -1,5 +1,11 @@
 # Android build requirements
 
+> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+
+_Moved here from `android/BUILD.md` on 2026-09-03. It was the one document in this tree that
+lived outside `docs/` and was linked from nowhere — unreachable documentation that still greps
+as current. Nothing referenced the old path, so no citation needed repointing._
+
 Run the library build from the repository root with:
 
 ```sh

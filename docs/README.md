@@ -47,6 +47,9 @@ documentation still greps as current.
   public-visibility decision and its billing reason, and why the workflow triggers on `push`
   rather than `pull_request`. Also the three-outcome verify policy: why a SKIPPED check is
   tolerated on a developer machine and fatal in CI, and never reads as a pass in either.
+- [Android build requirements](reference/android-build.md) — the JDK, Android SDK and Gradle
+  versions the module needs, and why `minSdk 26` / `targetSdk 35` are the numbers they are.
+  Moved here from `android/BUILD.md` on 2026-09-03, where nothing linked to it.
 - [Licensing](reference/licensing.md) — why MIT rather than Apache-2.0 or a reciprocal licence, the
   dependency audit behind that choice (including the one AGPL component in the test harness and why
   nothing travels inward from it), and the file-level convention: root `LICENSE` plus SPDX in each
@@ -74,6 +77,11 @@ documentation still greps as current.
 
 - [iOS host integration](guides/ios-host-integration.md) — the two mandatory app-delegate call
   sites.
+- [Real tusd integration](guides/tusd-integration.md) — the real-wire harnesses: the three-valued
+  exit-code contract (`77` is not a pass), why every Compose image is digest-pinned, the Swift
+  driver that resumes across an actual `SIGKILL`, the Kotlin test that resumes across a
+  `SliceDeadlineReached` abort, which of them run in CI and which do not, and the sampled
+  peak-extra-disk measurement behind the I6 storage claim.
 
 ## Decisions
 
@@ -82,3 +90,19 @@ _None recorded yet. Two are outstanding and should land here:_
 - _`0001-adopt-rufh-build-clients.md` — the build-vs-adopt analysis that motivated this repository._
 - _`0002-ios-deployment-target.md` — iOS 17 minimum vs. carrying the pre-17 remainder-staging path.
   See [iOS background transfer §4](reference/ios-background-transfer.md)._
+
+## Layout
+
+Checked on 2026-09-03 against the documentation standard (five root files; seven directories under
+`docs/`: `tutorials` `guides` `reference` `explanation` `decisions` `runbooks` `archive`).
+
+| The standard says | Here |
+| --- | --- |
+| Five root files | `README.md`, `CHANGELOG.md`, `CLAUDE.md`, `ROADMAP.md`, `LICENSE` — all present. |
+| Seven directories under `docs/` | `reference/` and `guides/` exist. The other five hold nothing yet and so are not committed; git does not track empty directories. `decisions/` is the one with named, outstanding content — see above. |
+| No directory outside the seven | **No declared exceptions.** There was one violation and it was fixed rather than excepted: `android/BUILD.md` moved to [reference/android-build.md](reference/android-build.md). Nothing cited the old path, so nothing needed repointing. |
+| Every document linked from here | Every `.md` file in the repository outside `.chief/` runtime state is listed above. |
+| Every document banner-stamped | Every file under `docs/` opens with `Status · Updated · Owner`. |
+
+A directory added under `docs/` that is not one of the seven belongs in this table with a reason, or
+its contents belong in one that is.
