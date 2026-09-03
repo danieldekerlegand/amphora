@@ -1,6 +1,6 @@
 # Changelog
 
-> **Status:** Live · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
 
 Notable changes to Amphora. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project intends [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from `0.x`, with
@@ -26,6 +26,42 @@ Two conventions, both consequences of how this repository treats evidence
 ---
 
 ## [Unreleased]
+
+### 2026-09-03
+
+#### Removed
+
+- `UploadDao.inState` — a Room `@Query` whose only occurrence in the module was its own declaration.
+  Room generates a query's implementation, never a caller, and it had no Swift counterpart, so it was
+  not half of a deliberate cross-port registry API. **Kotlin: verified in CI only** — `Gradle build`
+  reports `SKIPPED` on the authoring machine (no JDK on `PATH`).
+- The `SDK_INT >= O` guard in `UploadNotifications.ensureChannel()` — `VERSION_CODES.O` is API 26 and
+  `minSdk` is 26, so the condition held on every installable device and the `else` was unreachable.
+  The sibling `>= Q` guard is live and stays. **Kotlin: verified in CI only.**
+- The `androidx.core:core-ktx` dependency declaration — zero `import androidx.core` in the module. It
+  stays on the resolved classpath transitively via `work-runtime-ktx`, so nothing a compile can
+  observe changes. **Kotlin: verified in CI only.**
+
+#### Changed
+
+- `TransportError.errorClass` now defers to `HTTPStatus.classify` instead of restating the same
+  six-arm HTTP-status → `ErrorClass` table verbatim. The two copies were read on different code paths
+  — the background-session delegate and the foreground control plane — and no conformance vector
+  covers status classification, so a change to one copy would have shipped a build that retries `429`
+  on `HEAD` and gives up on it mid-transfer with all 40 vectors still passing. Observed: Swift build
+  plus 46 passing cases, unchanged before and after.
+
+#### Added
+
+- [Dead-code inventory](docs/reference/dead-code-inventory.md) — nine reproducible searches and what
+  each covers, six genuinely-dead findings, eight things that fail a static search and are
+  nonetheless load-bearing, three intra-port duplications, and the four classes of thing a static
+  search over this tree cannot see.
+- [Dead-code removal record](docs/reference/dead-code-removal.md) — the disposition of every
+  inventory row. Three of the six §1 candidates were **not** removed, each with its reason, and one
+  of those three (`loadResumeData`) survived because the inventory's own corroborating grep result
+  was wrong: the mechanism *is* specified, in `ios-background-transfer.md:65-66` and
+  `platform-constraints.md:21-22`.
 
 ### 2026-08-27
 

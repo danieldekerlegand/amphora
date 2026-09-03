@@ -12,9 +12,11 @@ bytes in production. So "dead" cannot mean "unreachable at run time" — there i
 It means **scaffolding that no longer matches the specification it was written against**, and a
 skeleton is *not* dead merely because it is unused. That distinction is what §2 exists for.
 
-**Nothing in this document has been removed.** It is the inventory measured *before* anything is
-deleted; what is acted on, and what survives with its reason, is recorded in the removal pass that
-follows.
+**This document is the inventory as measured, before anything was deleted.** It is deliberately not
+rewritten to match what happened next; the disposition of every row — four removed, three survived,
+and one whose corroborating evidence here turned out to be **wrong** — lives in the
+[dead-code removal record](dead-code-removal.md), which is later and wins where the two disagree.
+Rows acted on carry a marker below.
 
 ---
 
@@ -54,11 +56,13 @@ than hiding an abandoned path).
 |---|---|
 | **Where** | `ios/Sources/Amphora/Store/UploadStore.swift:34` (protocol), `Store/SQLiteUploadStore.swift:129` (implementation, plus the `CREATE TABLE resume_data` at `:32`) |
 | **Search** | S3. `grep -rn --include='*.swift' -w loadResumeData ios/` returns **2 lines** — the declaration and the implementation. Zero call sites. |
-| **Corroboration** | `grep -rn "resume_data\|resumeData\|ResumeData" docs/ Tests/ packages/ integration/` returns **nothing**: no document, no vector, no host-facing API mentions it. |
+| **Corroboration** | ~~`grep -rn "resume_data\|resumeData\|ResumeData" docs/ Tests/ packages/ integration/` returns **nothing**: no document, no vector, no host-facing API mentions it.~~ **This is wrong — see the correction below.** That grep returns four lines in `ios-background-transfer.md:65-66` and `platform-constraints.md:21-22`, which specify the blob's purpose and name its consumer, `uploadTask(withResumeData:)`. |
 | **Why it matters** | The *write* half is live: `DefaultUploadEngine.swift:298` calls `store.storeResumeData` from the session delegate, so the table fills with iOS-17 resume blobs ("hundreds of KB", per the protocol's own doc comment) that nothing ever reads back. This is not merely unused code, it is unused code that consumes disk on a device — in a library whose reason for existing is that staged bytes on a full device corrupt uploads. |
-| **Judgement** | The reader half is dead. The writer half is a **live storage leak**, which is a defect, not dead code — do not delete `storeResumeData` to make the pair symmetric. |
+| **Judgement** | ~~The reader half is dead.~~ **SUPERSEDED — NOT REMOVED.** The documentation above specifies the read-back this function is the unimplemented half of, which puts the row in §2 alongside §2.4, not here. The writer half remains a **live storage leak** — a defect to fix by implementing the reader, not by deleting it. Full reasoning: [removal record §2.1](dead-code-removal.md#21-loadresumedata--the-inventorys-evidence-for-this-row-was-wrong). |
 
 ### 1.2 `UploadDao.inState` — a Room query with no caller and no counterpart
+
+**REMOVED** in `ac91b10`.
 
 | | |
 |---|---|
@@ -68,6 +72,8 @@ than hiding an abandoned path).
 | **Judgement** | Dead. The reconciler's working set is `unfinished()`; nothing needs a by-state query. |
 
 ### 1.3 `WireDialect.Rufh` (Kotlin) — 30 lines nothing constructs
+
+**NOT REMOVED** — contested by `wire-protocol.md`; see [removal record §2.2](dead-code-removal.md#22-wiredialectrufh-kotlin--dead-by-search-alive-by-specification).
 
 | | |
 |---|---|
@@ -79,6 +85,8 @@ than hiding an abandoned path).
 
 ### 1.4 `androidx.core:core-ktx` — a dependency nothing imports
 
+**REMOVED** in `6d16ac7`.
+
 | | |
 |---|---|
 | **Where** | `android/build.gradle.kts:91` |
@@ -88,6 +96,8 @@ than hiding an abandoned path).
 
 ### 1.5 `UploadNotifications.ensureChannel` — a version guard that can no longer be false
 
+**REMOVED** in `9edd129`.
+
 | | |
 |---|---|
 | **Where** | `android/src/main/kotlin/dev/amphora/work/UploadNotifications.kt:31` — `if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)` |
@@ -96,6 +106,8 @@ than hiding an abandoned path).
 | **Judgement** | Dead branch. The condition, not the body. |
 
 ### 1.6 `@RequiresApi(Build.VERSION_CODES.O)` ×3 — always satisfied
+
+**NOT REMOVED** — the annotations are true, and they are what keeps `androidx.annotation` on the classpath; see [removal record §2.3](dead-code-removal.md#23-requiresapibuildversion_codeso-3--redundant-but-true-and-load-bearing).
 
 | | |
 |---|---|
@@ -217,6 +229,8 @@ two ports of one specification is this repository's design, and `Tests/Conforman
 
 ### 3.1 HTTP-status → `ErrorClass`, twice in Swift, verbatim
 
+**RESOLVED** in `afabf05` — `TransportError.errorClass` now defers to `HTTPStatus.classify`.
+
 | | |
 |---|---|
 | **Where** | `ios/Sources/Amphora/Session/BackgroundSessionManager.swift:212-223` (`HTTPStatus.classify`) and `ios/Sources/Amphora/Transport/ControlPlaneClient.swift:124-132` (`TransportError.errorClass`, the `.http(code)` arm) |
@@ -278,9 +292,9 @@ rests entirely on CI, and this document should not be read as saying otherwise.
 
 | Class | Count | Disposition |
 |---|---|---|
-| Genuinely dead (§1) | 6 | Candidates for US-2. §1.3 needs a human ruling; §1.6 is marginal. |
+| Genuinely dead (§1) | 6 as measured, **3 on review** | 3 removed (§1.2, §1.4, §1.5). §1.1 was misclassified here and stays; §1.3 and §1.6 stay with reasons. See the [removal record](dead-code-removal.md). |
 | Deliberately unexercised (§2) | 8 | **Do not delete.** Recorded so the next sweep stops here rather than re-deriving them. |
-| Duplicated implementations (§3) | 3 | §3.1 is the only one whose drift is both silent and behavioural. |
+| Duplicated implementations (§3) | 3 | §3.1 resolved — it was the only one whose drift was both silent and behavioural. §3.2 and §3.3 deferred, with reasons. |
 | Undecidable (§4) | 4 classes | Left in place by construction. |
 
 Two things the sweep looked for and did not find, worth stating so nobody looks again: **zero**

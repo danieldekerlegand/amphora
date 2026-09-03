@@ -56,6 +56,9 @@ documentation still greps as current.
   findings, eight things that fail a static search and are nonetheless load-bearing (ten Room
   `@TypeConverter`s among them), three intra-port duplications ranked by what drift would cost, and
   the four classes of thing a static search over this tree cannot see.
+- [Dead-code removal record](reference/dead-code-removal.md) — what the inventory proposed versus
+  what happened: four removals, one commit each, and the three candidates that survived with the
+  reason each survived — including the one whose evidence in the inventory turned out to be wrong.
 - [The verification record](reference/verification-record.md) — the rule that a story may not be
   marked passing on work its own notes record as not having run, what breaking it cost this
   repository at tasklist `80`, and what an evidence-bearing note has to contain.
