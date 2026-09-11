@@ -71,6 +71,21 @@ skip_check() {
   fi
 }
 
+# ROADMAP TRUTH — first, and never skipped. The property it defends is ROADMAP.md against
+# tasks/chief/completed/: a property of the TREE, not of any toolchain, so unlike every check
+# below it has nothing to probe for and no environment that excuses it. Three legs — COVERAGE
+# (every completed tasklist named by its FULL stem, in the roadmap or in the generated ledger
+# at docs/reference/tasklist-ledger.md), STALE (no row marked open names a tasklist that has
+# merged), PARK (a parked tasklist reads as PARKED at every mention). Where it genuinely cannot
+# measure it SKIPs loudly on its own terms and exits 0, which is the same three-outcome
+# discipline this file is built on: a check that did not run must not read as one that passed.
+#
+# Invoked through "${BASH:-bash}" — the ABSOLUTE path of the shell already running this file —
+# rather than a bare `bash`. .chief/tests/verify-skip-policy.sh drives this script with an
+# emptied PATH to produce its no-toolchain counterfactual, and a bare `bash` is simply not
+# resolvable there; the guard would report FAIL for the interpreter rather than for the tree.
+run_check "roadmap truth" "${BASH:-bash}" scripts/check-roadmap-truth.sh
+
 if command -v swift >/dev/null 2>&1 && [ -f ios/Package.swift ]; then
   run_check "Swift build" swift build --package-path ios
   run_check "Swift tests" swift run --package-path ios AmphoraPathTests
