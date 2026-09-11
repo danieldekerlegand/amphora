@@ -1,6 +1,6 @@
 # Tasklist ledger
 
-**Status:** Living · **Updated:** 2026-09-11 · **Owner:** the merge gate
+> **Status:** Current · **Updated:** 2026-09-11 · **Owner:** amphora
 
 Every tasklist this repo has completed, with the commit it merged as. This file is
 the RECORD; [`ROADMAP.md`](../../ROADMAP.md) is the PLAN. A row here means a tasklist

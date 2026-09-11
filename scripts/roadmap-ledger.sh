@@ -109,7 +109,12 @@ if [ ! -f "$LEDGER" ]; then
     mkdir -p "$(dirname "$LEDGER")"
     {
       printf '# Tasklist ledger\n\n'
-      printf '**Status:** Living · **Updated:** %s · **Owner:** the merge gate\n\n' "$(date +%Y-%m-%d)"
+      # The ecosystem documentation standard wants a Status · Updated · Owner banner,
+      # and the checkers that enforce it match a BLOCKQUOTE form. Emitting a bare
+      # `**Status:** …` line parsed as no banner at all and took two repos from 0 to
+      # 1 "missing banner" the moment this file was generated — a new document that
+      # fails the docs gate on arrival is not a document, it is a chore.
+      printf '> **Status:** Current · **Updated:** %s · **Owner:** the merge gate\n\n' "$(date +%Y-%m-%d)"
       printf 'Every tasklist this repo has completed, with the commit it merged as. This file is\n'
       printf 'the RECORD; [`ROADMAP.md`](../../ROADMAP.md) is the PLAN. A row here means a tasklist\n'
       printf 'merged — not that the capability behind it is finished, which is a claim only the\n'
