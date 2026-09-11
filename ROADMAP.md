@@ -1,6 +1,6 @@
 # Amphora roadmap
 
-> **Status:** Live · **Updated:** 2026-08-27 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-11 · **Owner:** Daniel DeKerlegand
 
 This document states **where this repository actually is**, then what remains, in the register
 [`docs/reference/environment-matrix.md`](docs/reference/environment-matrix.md) already uses: a cell
@@ -27,7 +27,7 @@ the cell) · **MANUAL-ON-DEVICE** (reproduced on physical hardware, recording na
 | **I6 — no chunk temp files** holds in practice, not just in the source | **AUTOMATED (measured)** | Peak extra disk during an 8 MiB transfer: **4 KiB** Swift (sampled `du -sk` every 50 ms with `TMPDIR` redirected into the sampled tree; baseline 8192 KiB, peak 8196 KiB) and **0 KiB** Kotlin (per-run `java.io.tmpdir`, 25 ms sampling). A remainder-staging transport would have needed ≈2816 KiB. |
 | The two state machines do not drift | **AUTOMATED — partial** | One fixture, `Tests/Conformance/vectors.json`, `schemaVersion 2`, 40 transition rows + 3 transport rows, read by both ports in CI, with `check-single-fixture.sh` gating the one-file invariant. Drift is *proven caught*, not assumed: `Tests/Conformance/drift-control.sh` drove both ports red naming the vector (Kotlin in CI run `33042568129`; Swift locally). **Partial** because of what the vectors do not assert — phase 2. |
 | Kotlin compiles | **AUTOMATED** | First compiled 2026-08-26, run `33039508625`: `:android:assemble` BUILD SUCCESSFUL, 54 tasks. Before that it had never been handed to a compiler at all. |
-| The CI gate is total | **NO — red, and partly nondeterministic** | Latest run `33044503283` (head `f769a6f`): `react-native`, `conformance-fixture`, `verify-policy` SUCCESS; **`ios` FAILURE**, **`android` FAILURE**. Phase 1. |
+| The CI gate is total | **NO — red, and partly nondeterministic** | Run `33044503283` (head `f769a6f`): `react-native`, `conformance-fixture`, `verify-policy` SUCCESS; **`ios` FAILURE**, **`android` FAILURE**. Re-read 2026-09-11, run `34556064209` (head `5ac68e3`): **`ios` FAILURE** on the same two Swift errors; `android` SUCCESS — which, per phase 1's exit rule, closes nothing. Phase 1; scheduled as tasklist `140`. |
 | A skipped check can never read as a passing one | **AUTOMATED** | `.chief/verify.sh` reports three outcomes, and `.chief/tests/verify-skip-policy.sh` asserts both policies against the real script with an emptied `PATH`; the `verify-policy` job runs it on every push. |
 | Background transfer while suspended (iOS + Android) | **NOT YET VERIFIED — physical device** | No device recording is checked in. Neither the host-side Swift tests nor the Android unit tests can produce one. |
 | Process death → OS relaunch → resume → cancel | **NOT YET VERIFIED — physical device** | The *protocol and state* behaviour is automated (above, and `swift-wire.sh`'s SIGKILL is a genuine process death, not an OS-initiated one). An OS-initiated relaunch of a suspended app is not. |
@@ -65,6 +65,14 @@ Because the `ios` job dies at its first step, everything after it — `swift run
 the Swift drift control — **never executes in CI**, and is run locally with the output recorded in
 story notes instead. That is a stopgap, and it is the reason the Swift half of several rows above
 says "local only".
+
+**Scheduled:** [`140-ci-green-at-the-root`](tasks/chief/140-ci-green-at-the-root.json) takes all
+three rows — `BackgroundSessionManager` gets a concurrency model at the current iOS 15 minimum (no
+dependency on ADR-0002), and the Room schema directory moves to the Room Gradle plugin with the
+exported schema committed. It cannot close this phase by itself: that needs a run on `main`, and
+chief merges without pushing. Its last story names the operator's steps.
+[`150-photos-assets-staged-before-upload`](tasks/chief/150-photos-assets-staged-before-upload.json)
+follows it (phase 4, row 3).
 
 **Closes when:** one run id shows every job green, the `ios` job is observed reaching and passing
 its `swift run` and drift-control steps, and the Room kapt failure is either fixed at the root
@@ -140,7 +148,10 @@ The rows are not equally valuable. In rough order of what they would retire:
    the whole bounded-worker design exists for, and it exists on no other platform.
 2. **iOS 17+ / NativeResumableTransport / local file** — the native path most hosts would take.
 3. **iOS / Photos asset** — the one source that genuinely cannot be seeked, and therefore the only
-   place a staging copy and a storage reservation come into play at all.
+   place a staging copy and a storage reservation come into play at all. **Not runnable yet:** the
+   Swift engine never calls `SourceResolver.stageIfRequired`, so a `ph://` job reaches the transport
+   unstaged ([dead-code inventory §2.3](docs/reference/dead-code-inventory.md)). A device run of this
+   row today would exercise that bug; tasklist `150` fixes it first.
 4. **Android / non-seekable `content://`** — the same argument, other platform.
 5. The remaining rows, which mostly re-verify a transport already covered by rows 1–4.
 
