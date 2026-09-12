@@ -1,6 +1,6 @@
 # Amphora roadmap
 
-> **Status:** Live · **Updated:** 2026-09-11 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 This document states **where this repository actually is**, then what remains, in the register
 [`docs/reference/environment-matrix.md`](docs/reference/environment-matrix.md) already uses: a cell
@@ -27,7 +27,7 @@ the cell) · **MANUAL-ON-DEVICE** (reproduced on physical hardware, recording na
 | **I6 — no chunk temp files** holds in practice, not just in the source | **AUTOMATED (measured)** | Peak extra disk during an 8 MiB transfer: **4 KiB** Swift (sampled `du -sk` every 50 ms with `TMPDIR` redirected into the sampled tree; baseline 8192 KiB, peak 8196 KiB) and **0 KiB** Kotlin (per-run `java.io.tmpdir`, 25 ms sampling). A remainder-staging transport would have needed ≈2816 KiB. |
 | The two state machines do not drift | **AUTOMATED — partial** | One fixture, `Tests/Conformance/vectors.json`, `schemaVersion 2`, 40 transition rows + 3 transport rows, read by both ports in CI, with `check-single-fixture.sh` gating the one-file invariant. Drift is *proven caught*, not assumed: `Tests/Conformance/drift-control.sh` drove both ports red naming the vector (Kotlin in CI run `33042568129`; Swift locally). **Partial** because of what the vectors do not assert — phase 2. |
 | Kotlin compiles | **AUTOMATED** | First compiled 2026-08-26, run `33039508625`: `:android:assemble` BUILD SUCCESSFUL, 54 tasks. Before that it had never been handed to a compiler at all. |
-| The CI gate is total | **NO — red, and partly nondeterministic** | Run `33044503283` (head `f769a6f`): `react-native`, `conformance-fixture`, `verify-policy` SUCCESS; **`ios` FAILURE**, **`android` FAILURE**. Re-read 2026-09-11, run `34556064209` (head `5ac68e3`): **`ios` FAILURE** on the same two Swift errors; `android` SUCCESS — which, per phase 1's exit rule, closes nothing. Phase 1; scheduled as tasklist `140`. |
+| The CI gate is total | **GREEN ON A BRANCH — not yet on `main`** | Run `34675666580` (head `3b6f934`, branch `chief/140-ci-green-at-the-root`), **both attempts**: `ios`, `android`, `conformance-fixture`, `verify-policy`, `react-native` all `success`. The `ios` job reached its later steps for the first time in its life — `Amphora path tests: 46 passed` and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`. Before that: run `33044503283` had `ios` and `android` FAILURE, and run `34556064209` still `ios` FAILURE. **Phase 1 stays open** because its exit condition names a run, and no `main` run has happened — chief merges locally and pushes nothing. |
 | A skipped check can never read as a passing one | **AUTOMATED** | `.chief/verify.sh` reports three outcomes, and `.chief/tests/verify-skip-policy.sh` asserts both policies against the real script with an emptied `PATH`; the `verify-policy` job runs it on every push. |
 | Background transfer while suspended (iOS + Android) | **NOT YET VERIFIED — physical device** | No device recording is checked in. Neither the host-side Swift tests nor the Android unit tests can produce one. |
 | Process death → OS relaunch → resume → cancel | **NOT YET VERIFIED — physical device** | The *protocol and state* behaviour is automated (above, and `swift-wire.sh`'s SIGKILL is a genuine process death, not an OS-initiated one). An OS-initiated relaunch of a suspended app is not. |
@@ -40,8 +40,8 @@ the cell) · **MANUAL-ON-DEVICE** (reproduced on physical hardware, recording na
 
 **The honest one-line summary:** the protocol layer, the state machines and the no-chunk-temp-files
 commitment are now measured on both ports against a real server; **everything environmental — the
-part this library exists for — is unverified**, and the gate that would keep the measured half from
-regressing is itself red.
+part this library exists for — is unverified**; and the gate that keeps the measured half from
+regressing is green twice on a tasklist branch and has still never run green on `main`.
 
 ---
 
@@ -49,30 +49,42 @@ regressing is itself red.
 
 ### Phase 1 — Make the gate total
 
-CI runs, and it is red. It has been red on every run in its short life, which means the repository
-currently has a gate that reports failure as its steady state — one step better than a gate that
-cannot start, and one step short of useful.
+CI had been red on every run in its short life: a gate whose steady state was failure — one step
+better than a gate that cannot start, and one step short of useful. Tasklist `140` took all three
+causes. What follows is what each of them was, and what is now observed in their place.
 
-Three distinct problems, all observed rather than inferred:
+| Where | What | Then | Now |
+|---|---|---|---|
+| `ios/Sources/Amphora/Governor/NetworkGovernor.swift:23` | `reference to captured var 'self' in concurrently-executing code` | Run `33044503283`, still present on `34556064209`. Only the CI Swift surfaced it. | Gone. `start()` binds `guard let self` before the `Task`, so the `Task` captures a `let`; the `pathUpdateHandler` capture stays **weak** because the actor owns the monitor and `stop()` does not clear the handler. |
+| `ios/Sources/Amphora/Transport/TUSKitTransport.swift:27` | stored property `session` of `Sendable`-conforming struct has non-`Sendable` type `BackgroundSessionManager` | Same runs. The `BackgroundUploadStarter` wrapper had narrowed the equivalent complaint against `NativeResumableTransport` to one call — an assertion, not a design. | Gone, at the root: `BackgroundSessionManager` has a concurrency model (one `NSLock` over both mutable fields, eager session, `@unchecked Sendable` justified per property). The wrapper is deleted; `BackgroundUploadStarting` refines `Sendable` instead. |
+| `:android:kaptReleaseKotlin` | `AnnotationProcessingError: java.lang.IllegalStateException: Empty schema file` | **Nondeterministic**: SUCCESS at `89583f9`, FAILURE at `f769a6f`, and the diff between them is one JSON tasklist file. | Fixed at the configuration. The mechanism was established from the Room 2.6.1 sources first — both variant kapt tasks resolved schema *in* and *out* to one directory and `exportSchema` truncates on write, so a concurrent reader sees zero bytes. `id("androidx.room")` + `room { schemaDirectory(…) }` gives each task its own output; the exported schema is committed and a CI step fails on drift. |
 
-| Where | What | Observed |
-|---|---|---|
-| `ios/Sources/Amphora/Governor/NetworkGovernor.swift:23` | `reference to captured var 'self' in concurrently-executing code` | Run `33044503283`. Only the CI Swift surfaces it: the local toolchain does not, so `verify.sh` is green while the job is red. |
-| `ios/Sources/Amphora/Transport/TUSKitTransport.swift:27` | stored property `session` of `Sendable`-conforming struct has non-`Sendable` type `BackgroundSessionManager` | Same run. The equivalent complaint against `NativeResumableTransport` was retired by the I6 seam's `BackgroundUploadStarter` wrapper — a narrow `@unchecked Sendable` claim over one call, **not** the redesign `BackgroundSessionManager` still needs. |
-| `:android:kaptReleaseKotlin` | `AnnotationProcessingError: java.lang.IllegalStateException: Empty schema file` | **Nondeterministic.** The `android` job was SUCCESS at `89583f9` and FAILURE at `f769a6f`, and `git diff 89583f9 f769a6f` is *one JSON tasklist file* — no Kotlin, no Gradle, no Room entity changed. A gate that flips verdict on identical inputs does not gate anything. |
+A fourth cause surfaced only once the `android` job got far enough to reach it: `compose up` failed
+with `pull access denied for minio/minio`. Docker Hub had stopped answering anonymous pulls for that
+repository entirely — `401` for the pinned digest *and* for `latest` — so MinIO is now pulled from
+`quay.io` **by the same digest**, which is the property a digest pin exists for.
 
-Because the `ios` job dies at its first step, everything after it — `swift run AmphoraPathTests`,
-the Swift drift control — **never executes in CI**, and is run locally with the output recorded in
-story notes instead. That is a stopgap, and it is the reason the Swift half of several rows above
-says "local only".
+Because the `ios` job used to die at its first step, everything after it — `swift run AmphoraPathTests`,
+the Swift drift control — had **never executed in CI**. Run `34675666580` is the first time they did:
+`Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6 transport vectors)`
+and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`.
 
-**Scheduled:** [`140-ci-green-at-the-root`](tasks/chief/140-ci-green-at-the-root.json) takes all
-three rows — `BackgroundSessionManager` gets a concurrency model at the current iOS 15 minimum (no
-dependency on ADR-0002), and the Room schema directory moves to the Room Gradle plugin with the
-exported schema committed. It cannot close this phase by itself: that needs a run on `main`, and
-chief merges without pushing. Its last story names the operator's steps.
-[`150-photos-assets-staged-before-upload`](tasks/chief/150-photos-assets-staged-before-upload.json)
-follows it (phase 4, row 3).
+**Observed:** run `34675666580` (head `3b6f934`, branch `chief/140-ci-green-at-the-root`), attempt 1
+and attempt 2 on the identical sha, all five jobs `success` in each. Two attempts, not one, because
+this gate has flipped its verdict on unchanged input before.
+
+**Still open, and this is the whole of what is left.** The exit condition names *a run*, and both
+attempts are on a tasklist branch. Chief merges locally and makes no network call, so closing this is
+an operator action, in order:
+
+1. `git push origin main`
+2. `gh run list --branch main --limit 1`, then read that run: every job `success`, and the `ios` job
+   observed reaching **and passing** `swift run` and the drift control — not merely compiling.
+3. `gh run rerun <id>` once, and see it green again on the same sha.
+4. Only then mark this phase and the §1 row "The CI gate is total" closed, citing both attempts.
+
+**Next:** [`150-photos-assets-staged-before-upload`](tasks/chief/150-photos-assets-staged-before-upload.json)
+(phase 4, row 3) follows [`140-ci-green-at-the-root`](tasks/chief/140-ci-green-at-the-root.json).
 
 **Closes when:** one run id shows every job green, the `ios` job is observed reaching and passing
 its `swift run` and drift-control steps, and the Room kapt failure is either fixed at the root
@@ -118,11 +130,15 @@ What remains is that it is only half a gate:
   for the Swift port — a genuine `SIGKILL` mid-transfer with a second process resuming — exists as
   one developer's terminal output, and nothing would notice if it stopped being true. This blocks
   on phase 1.
-- **The pins can still rot.** The withdrawn `RELEASE.2024-06-13T19-44-55Z` MinIO tags are the
-  precedent: a pin that guarantees reproducibility only until the registry withdraws it guarantees
-  nothing. Both images are now digest-pinned with the release in a comment, and the separate
+- **The pins can still rot, and there are two ways.** The withdrawn `RELEASE.2024-06-13T19-44-55Z`
+  MinIO tags were the first: a pin that guarantees reproducibility only until the registry withdraws
+  it guarantees nothing. Both images are digest-pinned with the release in a comment, and the separate
   `minio/mc` pin was deleted outright (mc ships inside the minio image) — one fewer tag that can be
-  withdrawn. Nothing currently *detects* the next withdrawal except a red run.
+  withdrawn. The second way was observed on 2026-09-12: Docker Hub stopped serving `minio/minio` to
+  anonymous pulls at all (`401` for the pinned digest *and* for `latest`, while `tusproject/tusd`
+  still answered `200`), which a digest pin cannot protect against because it is access, not content.
+  MinIO now comes from `quay.io` **at the identical digest**. Nothing currently *detects* either kind
+  of withdrawal except a red run.
 - **The integration targets are opt-in.** `AmphoraTusdIntegration` and `TusdIntegrationTest` SKIP
   unless `TUSD_ENDPOINT` is set. Under the repository's own policy a skip is not a pass; in CI it
   is a failure. The android job sets it. Nothing else does.
@@ -289,10 +305,19 @@ answered, phase 4 has no schedule and the roadmap should not imply one.**
 path). The second is not academic: dropping pre-17 would delete `TUSKitTransport`, which is where
 one of the two `ios` compile errors in phase 1 lives, and would halve the iOS rows in the matrix.
 
-**Who owns `BackgroundSessionManager`'s concurrency model?** Recorded in
-[Continuous integration](docs/reference/continuous-integration.md) as owned by nobody. The
-`@unchecked Sendable` wrapper introduced for the I6 seam is a narrow assertion about one call, not
-a design. Phase 1 forces the answer.
+**~~Who owns `BackgroundSessionManager`'s concurrency model?~~ Answered, 2026-09-12 — the type
+itself does.** This was recorded as owned by nobody, with the I6 seam's `@unchecked Sendable` wrapper
+standing in as a narrow assertion about one call rather than a design. Phase 1 forced the answer and
+tasklist `140` wrote it: `ios/Sources/Amphora/Session/BackgroundSessionManager.swift` carries a
+`# Concurrency model` doc section naming, per stored property, whether it is mutable, which threads
+or queues touch it (the private serial delegate queue, `DispatchQueue.main` in
+`urlSessionDidFinishEvents`, the app-delegate launch path, arbitrary async callers) and what protects
+it. Both mutable fields are behind one `NSLock` — `NSLock` and not `OSAllocatedUnfairLock`, because
+the package minimum is still iOS 15 — the session is created eagerly in `init`, and the `@unchecked`
+in `@unchecked Sendable` is justified per property by that table rather than asserted. The wrapper,
+`BackgroundUploadStarter`, is deleted: `BackgroundUploadStarting` refines `Sendable` and both
+conformers meet it. Left open elsewhere: the same question for the **Kotlin** port has never been
+asked in writing.
 
 **Repository visibility is load-bearing on billing.** The repository is public deliberately, because
 this account's private-repository Actions are blocked outright by a payment failure. Making it
@@ -333,6 +358,29 @@ is verified *only* by CI. When CI is red or flaky, as it is today, that is the w
 evidence chain.
 
 ---
+
+## Corrections
+
+**2026-09-12, tasklist `140-ci-green-at-the-root`.** Three claims in this document were true when
+written and are not now.
+
+- **§1 "The CI gate is total" said `NO — red, and partly nondeterministic`.** The tree says the two
+  `ios` Swift errors and the Room `Empty schema file` race are fixed at their roots. Read to tell
+  them apart: run `34675666580` (head `3b6f934`), attempts 1 and 2, five jobs `success` each, with
+  the `ios` job's `46 passed` and `2 control(s) ran, 0 skipped, 0 failure(s)` lines in the log. The
+  row now reads **GREEN ON A BRANCH — not yet on `main`**, which is the strongest honest verdict: the
+  phase's exit condition names a run, and chief merges locally without pushing.
+- **Phase 1's three-row table listed all three causes as open.** It now carries a `Then`/`Now` column
+  pair, and the operator steps that would close the phase.
+- **§4 asked "Who owns `BackgroundSessionManager`'s concurrency model?" and answered "nobody".** The
+  type does, as of `ios/Sources/Amphora/Session/BackgroundSessionManager.swift`'s `# Concurrency model`
+  section. The question is struck through rather than deleted, so the answer stays attached to the
+  question that produced it.
+
+**What this pass did not check.** Nothing about the environmental rows — all 40 device-matrix cells
+still read `NOT YET VERIFIED — physical device` and were not re-read. The Swift real-wire run is
+still local-only (phase 3); this tasklist did not put it in CI. And the green quoted above is a
+**branch** run: no `main` run has ever been green, and this document does not claim one.
 
 ## Related
 

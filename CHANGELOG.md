@@ -1,6 +1,6 @@
 # Changelog
 
-> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 Notable changes to Amphora. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project intends [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from `0.x`, with
@@ -30,6 +30,30 @@ Two conventions, both consequences of how this repository treats evidence
 ### 2026-09-12
 
 #### Fixed
+
+- **Every CI job is green on one run id, for the first time in this repository's life — on a branch,
+  not on `main`.** Run `34675666580` (head `3b6f934`, `chief/140-ci-green-at-the-root`), **both
+  attempts on the identical sha**: `ios`, `android`, `conformance-fixture`, `verify-policy` and
+  `react-native` all `success`. Two attempts rather than one because this gate has flipped its verdict
+  on unchanged input before, and one green run after a red one proves nothing about the input. The
+  `ios` job reached its later steps for the first time ever — it used to die at `swift build` — and
+  printed `Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6
+  transport vectors)` and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`. The `android`
+  job's real wire ran end to end: `Kotlin real wire: 8 MiB uploaded across an aborted PATCH, resumed
+  by a new client from server offset 6553600, checksum verified, peak extra disk 0 KiB`.
+  **This does not close [`ROADMAP.md` phase 1](ROADMAP.md#phase-1--make-the-gate-total)**, whose exit
+  condition names a run and which has only ever been tested on branches; chief merges locally and
+  pushes nothing, so the `main` run is an operator step and phase 1 lists it.
+
+- **MinIO is pulled from `quay.io` instead of Docker Hub, at the identical digest.** The `android`
+  job's `Start tusd + MinIO` step failed on run `34675398053` with `pull access denied for
+  minio/minio, repository does not exist or may require 'docker login'`. Docker Hub answers `401` for
+  the pinned digest **and** for `latest` on `minio/minio`, while `tusproject/tusd` on the same
+  registry answers `200` — so the repository stopped serving anonymous pulls; the digest had not
+  rotted. quay.io returns the same `docker-content-digest` (`sha256:14cea493…8936e`) for the same
+  `RELEASE.2025-09-07T16-13-09Z` tag, so `integration/tusd/docker-compose.yml` changed host and
+  nothing else, provably. This is a second way a pin can stop resolving — the first was a withdrawn
+  tag — and nothing in the tree detects either ahead of a red run; phase 3 still carries that.
 
 - **The Room schema export race is fixed at the configuration, and the exported schema is now in
   version control.** `:android:kaptReleaseKotlin` had died with

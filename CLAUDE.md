@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 Orientation for a session — human or agent — working in this repository. It covers the things that
 are **not** derivable by reading the tree: the one design commitment that must survive contact with
@@ -97,11 +97,17 @@ is written down in [The verification record](docs/reference/verification-record.
 
 ### Corollary: CI's Swift is stricter than yours
 
-The `ios` job builds with `-Xswiftc -warnings-as-errors`, and the CI toolchain diagnoses concurrency
-problems the local one does not. `verify.sh` can be green on this machine while the `ios` job is red
-on the same commit — that is a live condition today, not a hypothetical
-([`ROADMAP.md` phase 1](ROADMAP.md#phase-1--make-the-gate-total)). A local pass is evidence; it is
-not the gate.
+The `ios` job builds with `-Xswiftc -warnings-as-errors`, and so, since 2026-09-12, does
+`verify.sh` — the flags now match. **The compilers do not.** Run `34675666580`'s `ios` job printed
+`Apple Swift version 5.10` and `Xcode 15.4`; the machines this work is authored on run Swift 6.3.3
+and Xcode 26.6, and the two disagree about concurrency diagnostics in **both** directions. That is
+not hypothetical: the `ios` job was red for its entire life on two errors the local toolchain never
+emitted, and a local `-strict-concurrency=complete` build emits one CI never mentions.
+
+Both jobs are green as of run `34675666580` (branch `chief/140-ci-green-at-the-root`, both attempts),
+so `verify.sh` and CI agree today. They agreed for the wrong reason before. A local pass is evidence;
+it is not the gate — check `gh run list` ([`ROADMAP.md` phase 1](ROADMAP.md#phase-1--make-the-gate-total),
+which is still open pending a run on `main`).
 
 ## 4. `swift test` reports "no tests found". The suite is fine.
 
@@ -187,6 +193,27 @@ table of what is measured and what is not, each cell naming its evidence. The sh
 protocol layer, both state machines and the no-chunk-temp-files commitment are measured against a
 real server; **everything environmental — background suspension, OS-initiated relaunch, real storage
 reclamation, radio handoff — is unverified**, all 40 device-matrix cells read
-`NOT YET VERIFIED — physical device`, and the CI gate is currently red.
+`NOT YET VERIFIED — physical device`, and the CI gate is green twice on a tasklist branch and has
+still never run green on `main`.
 
 A simulator result is never substituted for a hardware one, here or anywhere else in this tree.
+
+---
+
+## Corrections
+
+**2026-09-12, tasklist `140-ci-green-at-the-root`.** Two claims here had gone stale.
+
+- **§3's corollary said the `ios` job is red today.** It is not: run `34675666580`, both attempts,
+  all five jobs `success`. What was read to tell them apart is that run's job conclusions and its
+  `ios` log, which printed `Amphora path tests: 46 passed` and
+  `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)` — lines that had never appeared in CI
+  before, because the job had never compiled. The corollary's *warning* is unchanged and still the
+  point: the two toolchains are Swift 5.10 / Xcode 15.4 in CI against Swift 6.3.3 / Xcode 26.6
+  locally, and they disagree in both directions.
+- **§8 said "the CI gate is currently red."** It is green on a branch and has never been green on
+  `main`, which is what it now says.
+
+**What this pass did not check:** §§1, 2, 4, 5, 6 and 7 were not re-read against the tree. §3's
+central rule is untouched — `Gradle build` still reports `SKIPPED` here for want of a JDK, and that
+is still not a pass.
