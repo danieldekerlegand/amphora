@@ -104,10 +104,10 @@ and Xcode 26.6, and the two disagree about concurrency diagnostics in **both** d
 not hypothetical: the `ios` job was red for its entire life on two errors the local toolchain never
 emitted, and a local `-strict-concurrency=complete` build emits one CI never mentions.
 
-Both jobs are green as of run `34675666580` (branch `chief/140-ci-green-at-the-root`, both attempts),
-so `verify.sh` and CI agree today. They agreed for the wrong reason before. A local pass is evidence;
+Both jobs are green on `main` as of run `34678943053` (head `9afc2c3`, attempts 1 and 2), so
+`verify.sh` and CI agree today. They agreed for the wrong reason before. A local pass is evidence;
 it is not the gate — check `gh run list` ([`ROADMAP.md` phase 1](ROADMAP.md#phase-1--make-the-gate-total),
-which is still open pending a run on `main`).
+**closed 2026-09-12**).
 
 ## 4. `swift test` reports "no tests found". The suite is fine.
 
@@ -194,8 +194,8 @@ table of what is measured and what is not, each cell naming its evidence. The sh
 protocol layer, both state machines and the no-chunk-temp-files commitment are measured against a
 real server; **everything environmental — background suspension, OS-initiated relaunch, real storage
 reclamation, radio handoff — is unverified**, all 40 device-matrix cells read
-`NOT YET VERIFIED — physical device`, and the CI gate is green twice on a tasklist branch and has
-still never run green on `main`.
+`NOT YET VERIFIED — physical device`, and the CI gate is **green twice on `main`** (run
+`34678943053`, attempts 1 and 2) — which is the one thing that changed on 2026-09-12.
 
 A simulator result is never substituted for a hardware one, here or anywhere else in this tree.
 
@@ -251,3 +251,21 @@ third section, so two counts here moved again.
 **What this pass did not check:** §§1, 2, 5 and 7 were not re-read against the tree. `Gradle build`
 still reports `SKIPPED` locally for want of a JDK, so every Android claim in this tasklist rests on
 CI run ids, not on a local run.
+
+**2026-09-12, Phase 1 closed on `main`.** Two claims here were true when written and are not now.
+
+- **§3's corollary said phase 1 is "still open pending a run on `main`".** It closed. Run
+  `34678943053` (head `9afc2c3`), attempts 1 and 2 on the identical sha, all five jobs `success` in
+  each.
+- **§8 said the gate "is green twice on a tasklist branch and has still never run green on `main`".**
+  It is green twice *on `main`*. What was read to tell them apart: that run's job conclusions **and**
+  its `ios` log, which printed `Amphora path tests: 50 passed` under `Run Swift path tests` and
+  `drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` under `Swift drift negative control`.
+  The conclusions alone were not enough — a job that only compiles also reports `success`, which is
+  precisely why the exit condition names the steps rather than the verdict.
+- The `46` quoted at §3's corollary, and in the `140` entry above, is **still not stale** and was
+  left alone: those quote run `34675666580`'s log, and a run's log does not change.
+
+**What this pass did not check:** §§1, 2, 4, 5, 6 and 7 were not re-read against the tree. `Gradle
+build` still reports `SKIPPED` locally for want of a JDK, so the Android half of that run's evidence
+rests on the CI run id.

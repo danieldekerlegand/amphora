@@ -27,7 +27,7 @@ the cell) · **MANUAL-ON-DEVICE** (reproduced on physical hardware, recording na
 | **I6 — no chunk temp files** holds in practice, not just in the source | **AUTOMATED (measured)** | Peak extra disk during an 8 MiB transfer: **4 KiB** Swift (sampled `du -sk` every 50 ms with `TMPDIR` redirected into the sampled tree; baseline 8192 KiB, peak 8196 KiB) and **0 KiB** Kotlin (per-run `java.io.tmpdir`, 25 ms sampling). A remainder-staging transport would have needed ≈2816 KiB. |
 | The two state machines do not drift | **AUTOMATED — partial** | One fixture, `Tests/Conformance/vectors.json`, `schemaVersion 2`, 40 transition rows + 3 transport rows, read by both ports in CI, with `check-single-fixture.sh` gating the one-file invariant. Drift is *proven caught*, not assumed: `Tests/Conformance/drift-control.sh` drove both ports red naming the vector (Kotlin in CI run `33042568129`; Swift locally). **Partial** because of what the vectors do not assert — phase 2. |
 | Kotlin compiles | **AUTOMATED** | First compiled 2026-08-26, run `33039508625`: `:android:assemble` BUILD SUCCESSFUL, 54 tasks. Before that it had never been handed to a compiler at all. |
-| The CI gate is total | **GREEN ON A BRANCH — not yet on `main`** | Run `34675666580` (head `3b6f934`, branch `chief/140-ci-green-at-the-root`), **both attempts**: `ios`, `android`, `conformance-fixture`, `verify-policy`, `react-native` all `success`. The `ios` job reached its later steps for the first time in its life — `Amphora path tests: 46 passed` and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`. Before that: run `33044503283` had `ios` and `android` FAILURE, and run `34556064209` still `ios` FAILURE. **Phase 1 stays open** because its exit condition names a run, and no `main` run has happened — chief merges locally and pushes nothing. |
+| The CI gate is total | **GREEN ON `main` — both attempts** | Run `34678943053` (head `9afc2c3`, branch `main`), **attempts 1 and 2 on the identical sha**: `ios`, `android`, `conformance-fixture`, `verify-policy`, `react-native` all `success` in each. The `ios` job is observed *reaching and passing* its later steps, not merely compiling — `Amphora path tests: 50 passed (5 upload-path cases, 39 state-machine vectors, 3 I6 transport vectors, 3 source-staging vectors)` from the `Run Swift path tests` step and `drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` from `Swift drift negative control`. Before `main` ever ran green: run `34675666580` proved it twice on `chief/140-ci-green-at-the-root` (46 passed, 2 controls — the counts `150` has since grown), and earlier runs `33044503283` and `34556064209` had `ios` FAILURE. **Phase 1 is closed.** |
 | A skipped check can never read as a passing one | **AUTOMATED** | `.chief/verify.sh` reports three outcomes, and `.chief/tests/verify-skip-policy.sh` asserts both policies against the real script with an emptied `PATH`; the `verify-policy` job runs it on every push. |
 | Background transfer while suspended (iOS + Android) | **NOT YET VERIFIED — physical device** | No device recording is checked in. Neither the host-side Swift tests nor the Android unit tests can produce one. |
 | Process death → OS relaunch → resume → cancel | **NOT YET VERIFIED — physical device** | The *protocol and state* behaviour is automated (above, and `swift-wire.sh`'s SIGKILL is a genuine process death, not an OS-initiated one). An OS-initiated relaunch of a suspended app is not. |
@@ -41,7 +41,7 @@ the cell) · **MANUAL-ON-DEVICE** (reproduced on physical hardware, recording na
 **The honest one-line summary:** the protocol layer, the state machines and the no-chunk-temp-files
 commitment are now measured on both ports against a real server; **everything environmental — the
 part this library exists for — is unverified**; and the gate that keeps the measured half from
-regressing is green twice on a tasklist branch and has still never run green on `main`.
+regressing is **green twice on `main`** (run `34678943053`, head `9afc2c3`, attempts 1 and 2).
 
 ---
 
@@ -69,19 +69,21 @@ the Swift drift control — had **never executed in CI**. Run `34675666580` is t
 `Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6 transport vectors)`
 and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`.
 
-**Observed:** run `34675666580` (head `3b6f934`, branch `chief/140-ci-green-at-the-root`), attempt 1
-and attempt 2 on the identical sha, all five jobs `success` in each. Two attempts, not one, because
-this gate has flipped its verdict on unchanged input before.
+**Observed on the branch:** run `34675666580` (head `3b6f934`, branch `chief/140-ci-green-at-the-root`),
+attempt 1 and attempt 2 on the identical sha, all five jobs `success` in each. Two attempts, not one,
+because this gate has flipped its verdict on unchanged input before.
 
-**Still open, and this is the whole of what is left.** The exit condition names *a run*, and both
-attempts are on a tasklist branch. Chief merges locally and makes no network call, so closing this is
-an operator action, in order:
+**Observed on `main` — and this is what closes the phase.** Run `34678943053` (head `9afc2c3`),
+**attempts 1 and 2 on the identical sha**, all five jobs `success` in each. The `ios` job reached and
+passed its later steps in both: `Amphora path tests: 50 passed (5 upload-path cases, 39 state-machine
+vectors, 3 I6 transport vectors, 3 source-staging vectors)` and `drift-control: 3 control(s) ran,
+0 skipped, 0 failure(s)`. The counts are higher than the branch run's `46`/`2` because `150` added the
+source-staging vectors and a third control; each run's numbers are quoted from its own log.
 
-1. `git push origin main`
-2. `gh run list --branch main --limit 1`, then read that run: every job `success`, and the `ios` job
-   observed reaching **and passing** `swift run` and the drift control — not merely compiling.
-3. `gh run rerun <id>` once, and see it green again on the same sha.
-4. Only then mark this phase and the §1 row "The CI gate is total" closed, citing both attempts.
+**Closed 2026-09-12.** The four operator steps this section used to list were performed in order:
+`git push origin main` (`2e13294..9afc2c3`), the `main` run read job-by-job *and* log-by-log, a
+`gh run rerun` on the identical sha, and only then this row and the §1 verdict marked closed —
+citing both attempts, as the exit condition requires.
 
 **Next:** [`150-photos-assets-staged-before-upload`](tasks/chief/150-photos-assets-staged-before-upload.json)
 (phase 4, row 3) follows [`140-ci-green-at-the-root`](tasks/chief/140-ci-green-at-the-root.json).
@@ -381,6 +383,28 @@ written and are not now.
 still read `NOT YET VERIFIED — physical device` and were not re-read. The Swift real-wire run is
 still local-only (phase 3); this tasklist did not put it in CI. And the green quoted above is a
 **branch** run: no `main` run has ever been green, and this document does not claim one.
+
+**2026-09-12, Phase 1 closed on `main`.** The entry above is `140`'s and stands exactly as written —
+it describes what was true when the branch went green. A `main` run has since overtaken two of its
+claims.
+
+- **§1's row read "GREEN ON A BRANCH — not yet on `main`".** It now reads **GREEN ON `main` — both
+  attempts**, citing run `34678943053` (head `9afc2c3`), attempts 1 and 2 on the identical sha, five
+  jobs `success` in each. What was read to tell them apart is that run's job conclusions **and** its
+  `ios` log: `Amphora path tests: 50 passed` under the `Run Swift path tests` step and
+  `drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` under `Swift drift negative control`.
+  The conclusions alone could not settle it — a job that merely compiles also reports `success`, and
+  the exit condition turns on the job *reaching* those steps.
+- **The entry above ends "no `main` run has ever been green, and this document does not claim one".**
+  One has. That sentence is left standing rather than edited, because it was true on the date it
+  carries; this entry is what supersedes it.
+
+**What this pass did not check.** Nothing environmental: all 40 device-matrix cells still read
+`NOT YET VERIFIED — physical device` and were not re-read, and phases 2–7 were not revisited. The
+Swift real-wire run is still local-only. `Gradle build` still reports `SKIPPED` locally for want of a
+JDK, so the `android` evidence here rests on CI run ids rather than on a local run. The counts moved
+— `50`/`3` against the branch run's `46`/`2` — because `150` added the source-staging vectors and a
+third drift control; each run's numbers are quoted from its own log rather than carried across.
 
 ## Related
 
