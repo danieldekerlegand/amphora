@@ -122,11 +122,12 @@ error: no tests found; create a target in the 'Tests' directory     # exit 1
 That is **not** an empty suite and **not** a broken package. The real command is:
 
 ```sh
-swift run --package-path ios AmphoraPathTests     # 47 passed as of 2026-09-12
+swift run --package-path ios AmphoraPathTests     # 50 passed as of 2026-09-12
 ```
 
 which is what `.chief/verify.sh` and the `ios` CI job both invoke: 5 upload-path cases, 39
-state-machine vectors, 3 I6 transport vectors. The second executable target,
+state-machine vectors, 3 I6 transport vectors, 3 source-staging vectors. The second executable
+target,
 `AmphoraTusdIntegration`, is opt-in and SKIPs unless `TUSD_ENDPOINT` is set.
 
 Do not conclude from `swift test` that there is nothing to run, and do not "fix" it by converting
@@ -162,7 +163,7 @@ integration/tusd/        the real-wire harness: tusd v2 + MinIO via Docker Compo
 - **One `vectors.json`, no per-platform copy.** A second copy keeps both suites green while they
   describe two different state machines — the exact drift the fixture exists to catch, made
   invisible. `Tests/Conformance/check-single-fixture.sh` gates it from the git index.
-- **The vector counts (40 / 39 / 1 / 3) live in both ports' test code, not in the fixture.** That is
+- **The vector counts (40 / 39 / 1 / 3 / 3) live in both ports' test code, not in the fixture.** That is
   deliberate: a fixture cannot rewrite its own expectations, and adding a vector requires touching
   both ports. `BUILD SUCCESSFUL` on a task that ran zero vectors is a failure here.
 - **Licence.** Root `LICENSE` (MIT) is authoritative; each *distributable manifest* carries

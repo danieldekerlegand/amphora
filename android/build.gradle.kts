@@ -72,6 +72,12 @@ android {
                 it.testLogging {
                     events("passed", "skipped", "failed")
                     showStandardStreams = false
+                    // FULL, not Gradle's default SHORT. A conformance failure's whole value is the
+                    // message — which vector id, expected what, got what — and SHORT prints only
+                    // `java.lang.AssertionError at ConformanceVectorsTest.kt:334`, which names a
+                    // line number and nothing a reader can act on. Run 34676927439 is the example:
+                    // a staging row went red in CI and the log could not say which one.
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
                 }
             }
         }

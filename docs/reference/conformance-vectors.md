@@ -1,6 +1,6 @@
 # Conformance vectors — what they prove, and what they do not
 
-> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 `Tests/Conformance/vectors.json` is one file, read by both ports, and it exists for one reason: to
 stop the Swift and Kotlin state machines drifting apart. This document records its **scope**, so
@@ -14,16 +14,17 @@ Where the vectors run, and the counterfactual that proves they bite, is in
 
 ## 1. What is in the file
 
-`schemaVersion` 2. Two sections, both required, both counted by both ports before either runs:
+`schemaVersion` 3. Three sections, all required, all counted by both ports before any of them runs:
 
 | Section | Rows | What a row is |
 |---|---|---|
 | `vectors` | 40 | `given` job state + `event` → `expect`. Fed to `UploadStateMachine.reduce`. |
 | `transportInvariants.i6NoChunkTempFiles` | 3 | A file size and a resume offset → what the transport may do to disk. |
+| `sourceStaging.rows` | 3 | Whether a source can be seeked, and whether the reservation is granted → whether a copy is made, and what reaches the wire. |
 
-The counts (`40`, `1` non-reducing, `39` reduced, `3` I6) live in the two test files, not in the
-fixture, so a fixture rewritten by a generator cannot rewrite its own expectations alongside it.
-Adding a vector means touching both ports; that friction is the point.
+The counts (`40`, `1` non-reducing, `39` reduced, `3` I6, `3` staging) live in the two test files,
+not in the fixture, so a fixture rewritten by a generator cannot rewrite its own expectations
+alongside it. Adding a vector means touching both ports; that friction is the point.
 
 ---
 
@@ -62,6 +63,28 @@ This one earns its keep because a port that stages "just the remainder" satisfie
 rows while taking peak extra storage from about zero to the size of the file — and reintroduces the
 class of bug (the OS reclaiming a cache file mid-transfer) that the whole design exists to retire.
 
+**The staging decision — the step no transition row reaches.** `vectors` is a pure-function suite
+over `reduce`, so *which sources cost a copy* was checked by nothing on either port. That is not a
+theoretical gap: on Swift the answer had gone missing outright — `SourceResolver.stageIfRequired`
+had **zero callers** while all 40 rows reported green, so every `ph://` job reached the transport as
+a file URL whose path was the literal string `ph://…`. The three `sourceStaging` rows observe the
+**engine's own preparation step**, never `stageIfRequired`: the defect was a missing *caller*, and a
+row aimed at the callee would have passed against it.
+
+| Row | The source | What it requires |
+|---|---|---|
+| `stage-01-unseekable-source` | cannot be seeked | copied under a reservation of `sizeBytes`, and the copy happens **before** `create` — a reservation refused afterwards has already orphaned a server resource |
+| `stage-02-seekable-source-not-staged` | can be seeked | not copied, `SourceResolved.stagedPath` null, nothing in the staging directory. The negative row: a fix that staged *everything* passes `stage-01` and fails this |
+| `stage-03-reservation-refused` | cannot be seeked, reservation refused | `SpaceDenied(needed = sizeBytes)`, `create` never called, staging directory left empty |
+
+The source is port-specific by necessity, as with I6. iOS has exactly one source it cannot seek — a
+`ph://` Photos asset, presented through `PhotosAssetSource` — where Android has a content provider
+whose descriptor refuses `lseek`, presented through `ContentSource`. Kotlin drives
+`SourcePreparation.prepare` and reads the dispatched events directly; Swift drives the whole engine
+through `enqueue` and reads the row it wrote back. One consequence of that split is worth naming:
+`neededEqualsSizeBytes` is checked by **Kotlin only**, because neither state machine retains
+`needed` on the job, so Swift can only see the consequence — `BLOCKED(STORAGE_LOW)`.
+
 ---
 
 ## 3. What the vectors do NOT cover
@@ -99,7 +122,7 @@ by neither. Effect *ordering* is never checked.
 | I2 — persist before you act | **not asserted** (see `persistBeforeTransfer` above) |
 | I3 — no bytes in flight without a durable record | no vector |
 | I4 — terminal states absorb | partial: resulting state only |
-| I5 — reservation held across `PREPARING`→`FINALIZING` | no vector |
+| I5 — reservation held across `PREPARING`→`FINALIZING` | partial: `stage-01` shows a reservation is taken during `PREPARING` and `stage-03` that a refused one leaves no file, but nothing checks it is *held* to `FINALIZING` |
 | I6 — no chunk temp file | covered, §2 above |
 | I7 — offsets are monotonic | covered by `invariant-i7-offset-monotonic` |
 | I8 — one runner per job, durable lease | no vector |
@@ -108,7 +131,8 @@ by neither. Effect *ordering* is never checked.
 ### 3.4 Whole layers that are out of scope
 
 The vectors are a **pure-function** suite over `reduce`, plus three filesystem observations of the
-transport. Nothing here opens a socket, a database, or an OS service. Not covered by this fixture,
+transport and three of the engine's staging decision. Nothing here opens a socket or an OS service.
+Not covered by this fixture,
 by anything, or by another suite as noted:
 
 - **Wire protocol** — header construction, dialect differences, relative `Location` resolution.
@@ -170,9 +194,9 @@ one place** —
 
 1. Add the row to `Tests/Conformance/vectors.json`. One file — never a per-platform copy;
    `Tests/Conformance/check-single-fixture.sh` fails the build on a second one.
-2. Bump the expected count in **both** ports — `expectedVectorCount` /
-   `expectedI6VectorCount` in `ios/Tests/AmphoraTests/ConformanceTests.swift`, and
-   `EXPECTED_VECTOR_COUNT` / `EXPECTED_I6_VECTOR_COUNT` in
+2. Bump the expected count in **both** ports — `expectedVectorCount` / `expectedI6VectorCount` /
+   `expectedStagingVectorCount` in `ios/Tests/AmphoraTests/ConformanceTests.swift`, and
+   `EXPECTED_VECTOR_COUNT` / `EXPECTED_I6_VECTOR_COUNT` / `EXPECTED_STAGING_VECTOR_COUNT` in
    `android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt`. The two spellings are each
    port's own convention; there is no shared constant.
 3. If the row asserts a field neither port reads today, teach both ports to read it — and move it
