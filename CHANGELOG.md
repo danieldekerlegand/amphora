@@ -56,7 +56,12 @@ Two conventions, both consequences of how this repository treats evidence
   Swift (the only file that imports `Photos`; the export is *told* its destination, so no
   implementation can choose `Caches`) and `ContentSource` on Kotlin (the mockable `android.jar`
   answers `Os.lseek` with `0`, so every provider would otherwise read as seekable). Observed on
-  RUN_ID_PLACEHOLDER. **Scope, stated rather than implied:** every source and allocator in these rows
+  run `34677544162` (head `2f8119e`, `chief/150-photos-assets-staged-before-upload`), all five jobs
+  `success`: `ios` printed `Amphora path tests: 50 passed (5 upload-path cases, 39 state-machine
+  vectors, 3 I6 transport vectors, 3 source-staging vectors)` and `drift-control: 3 control(s) ran,
+  0 skipped, 0 failure(s)`; `android` printed the same drift-control summary, its staging control
+  going red as `stage-01-unseekable-source: SourceResolved carried no stagedPath — the source was
+  not staged`. **Scope, stated rather than implied:** every source and allocator in these rows
   is a double. They prove *our* call order and bookkeeping, not `PHAssetResourceManager` export
   behaviour, not an iCloud-offloaded original, not `StorageManager.allocateBytes` under real
   pressure. The device row **iOS / Photos asset** stays `NOT YET VERIFIED — physical device`.

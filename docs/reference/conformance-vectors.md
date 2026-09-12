@@ -203,7 +203,9 @@ nothing would report that the vectors caught a divergence that was never introdu
 Both ports run it in CI — `--port swift` in the `ios` job, `--port kotlin` in the `android` job —
 and since tasklist `140` both halves actually execute there. The `ios` job used to die at its first
 step on pre-existing Swift-concurrency errors, which meant the Swift half ran only on a developer's
-machine; RUN_ID_PLACEHOLDER. **Where the two toolchains still disagree is stated in exactly one
+machine; run `34677544162` (head `2f8119e`, `chief/150-photos-assets-staged-before-upload`) prints
+`drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` in the `ios` job **and** in the `android`
+job. **Where the two toolchains still disagree is stated in exactly one
 place** —
 [Continuous integration § known divergence](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
 — because a second copy of that drifts.
@@ -269,7 +271,10 @@ no longer untouched, and one sentence beside it had gone stale.
 
 - **§4 said the `ios` job "currently fails at its first step on pre-existing Swift-concurrency
   errors, so the Swift half does not yet execute on the runner".** It does execute, and has since
-  tasklist `140`. What was read to tell them apart is RUN_ID_CORRECTION. The
+  tasklist `140`. What was read to tell them apart is the `ios`
+  job's `Swift drift negative control` step in run `34677544162`, which printed
+  `OK — red, and it named 'stage-01-unseekable-source'` and
+  `drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` on the runner. The
   pointer to [continuous-integration.md](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
   survives, because the two toolchains still differ; what does not survive is the claim that the
   Swift half is local-only evidence.
