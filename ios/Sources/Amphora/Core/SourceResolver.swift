@@ -1,6 +1,5 @@
 import Foundation
 import CryptoKit
-import Photos
 
 /// Turns a caller-supplied URI into something the background session can send, copying only when
 /// it must.
@@ -11,19 +10,18 @@ import Photos
 public actor SourceResolver {
 
     private let storage: StorageGovernor
+    private let photos: any PhotosAssetSource
 
-    public init(storage: StorageGovernor) {
+    public init(storage: StorageGovernor, photos: any PhotosAssetSource = SystemPhotosAssetSource()) {
         self.storage = storage
+        self.photos = photos
     }
 
     public func probe(_ uri: String) throws -> Probe {
         if uri.hasPrefix("ph://") {
             let localId = String(uri.dropFirst("ph://".count))
-            guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localId], options: nil).firstObject
-            else { throw StorageError.exportFailed }
-            // `modificationDate` is the cheap change signal; Photos does not expose a stable
-            // content hash and computing one would mean reading the whole asset.
-            let size = Self.estimatedSize(of: asset)
+            let asset = try photos.metadata(forLocalIdentifier: localId)
+            let size = asset.estimatedSizeBytes
             return Probe(
                 kind: .photosAsset,
                 sizeBytes: size,
@@ -68,17 +66,6 @@ public actor SourceResolver {
         }
         let localId = String(job.sourceUri.dropFirst("ph://".count))
         return try await storage.exportPhotosAsset(localId, jobId: job.id)
-    }
-
-    /// `PHAsset` reports no byte size directly. The resource's `fileSize` is the closest thing,
-    /// and it is only an estimate for iCloud-offloaded originals — which is why the state machine
-    /// takes `sizeBytes` from `sourceResolved` after export rather than trusting this.
-    private static func estimatedSize(of asset: PHAsset) -> Int64 {
-        let resources = PHAssetResource.assetResources(for: asset)
-        for resource in resources {
-            if let size = resource.value(forKey: "fileSize") as? Int64 { return size }
-        }
-        return 0
     }
 
     public struct Probe: Sendable {

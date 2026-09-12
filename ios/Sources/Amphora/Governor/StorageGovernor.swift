@@ -1,5 +1,4 @@
 import Foundation
-import Photos
 
 /// The component no existing upload library has.
 ///
@@ -13,15 +12,20 @@ public actor StorageGovernor {
     private let headroom: Int64 = 512 * 1024 * 1024
 
     private let capacityProvider: @Sendable () -> Int64
+    private let photos: any PhotosAssetSource
     private var reservations: [String: Reservation] = [:]
     private var lastSample: StoragePressure = .ok
 
-    public init(capacityProvider: @escaping @Sendable () -> Int64 = {
-        let url = URL(fileURLWithPath: NSHomeDirectory())
-        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        return Int64(values?.volumeAvailableCapacityForImportantUsage ?? 0)
-    }) {
+    public init(
+        capacityProvider: @escaping @Sendable () -> Int64 = {
+            let url = URL(fileURLWithPath: NSHomeDirectory())
+            let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            return Int64(values?.volumeAvailableCapacityForImportantUsage ?? 0)
+        },
+        photos: any PhotosAssetSource = SystemPhotosAssetSource()
+    ) {
         self.capacityProvider = capacityProvider
+        self.photos = photos
     }
 
     /// The number Apple tells you to use for content the user asked for and expects to keep —
@@ -117,15 +121,13 @@ public actor StorageGovernor {
         return dir
     }
 
-    /// Export a `PHAsset` to a real file. Unavoidable — Photos assets are not seekable file URLs,
-    /// and this is the one source kind that always costs a full copy.
+    /// Export a Photos asset to a real file. Unavoidable — Photos assets are not seekable file
+    /// URLs, and this is the one source kind that always costs a full copy.
+    ///
+    /// The destination is *this* actor's reservation URL, handed to the seam. See
+    /// `PhotosAssetSource` for why that direction is load-bearing.
     public func exportPhotosAsset(_ localIdentifier: String, jobId: String) async throws -> URL {
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject,
-              let resource = PHAssetResource.assetResources(for: asset).first else {
-            throw StorageError.exportFailed
-        }
-
-        let bytes = Self.resourceSize(resource)
+        let bytes = try photos.metadata(forLocalIdentifier: localIdentifier).estimatedSizeBytes
         let reservation: Reservation
         if let existing = reservations[jobId] {
             reservation = existing
@@ -138,18 +140,12 @@ public actor StorageGovernor {
 
         try? FileManager.default.removeItem(at: reservation.url)
         do {
-            try await PhotosResourceExporter().write(resource: resource, to: reservation.url)
+            try await photos.export(localIdentifier: localIdentifier, to: reservation.url)
             return reservation.url
         } catch {
             release(jobId: jobId)
             throw StorageError.exportFailed
         }
-    }
-
-    private static func resourceSize(_ resource: PHAssetResource) -> Int64 {
-        if let size = resource.value(forKey: "fileSize") as? Int64 { return size }
-        if let size = resource.value(forKey: "fileSize") as? NSNumber { return size.int64Value }
-        return 0
     }
 
     /// Reclaim staged files with no owning job row. Crash-path cleanup for state-machine I5;
@@ -170,23 +166,6 @@ public actor StorageGovernor {
         public let url: URL
         public let bytes: Int64
         public let acquiredAt: Date
-    }
-}
-
-private struct PhotosResourceExporter: Sendable {
-    func write(resource: PHAssetResource, to url: URL) async throws {
-        let manager = PHAssetResourceManager.default()
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let options = PHAssetResourceRequestOptions()
-            options.isNetworkAccessAllowed = true
-            manager.writeData(for: resource, toFile: url, options: options) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
     }
 }
 
