@@ -18,9 +18,21 @@ public actor NetworkGovernor {
         current = initialStatus
     }
 
+    /// The capture stays **weak**, and that is the whole point of the two lines rather than one.
+    ///
+    /// The actor owns the monitor, so a strong `self` in `pathUpdateHandler` is a retain cycle —
+    /// and not one `stop()` breaks, since `cancel()` does not clear the handler. `guard let self`
+    /// then binds an immutable `self` for the `Task` to capture: the older compiler CI builds with
+    /// rejects `Task { await self?.update(...) }` outright ("reference to captured var 'self' in
+    /// concurrently-executing code") because the optional produced by a weak capture is a *var*.
+    /// Promoting it to a `let` first is the fix; dropping `weak` would also compile, and leak.
+    ///
+    /// The `Task` holding `self` strongly for the duration of one update is correct and is not the
+    /// cycle: it keeps the actor alive long enough to finish applying a path change it was handed.
     public func start() {
         monitor.pathUpdateHandler = { [weak self] path in
-            Task { await self?.update(from: path) }
+            guard let self else { return }
+            Task { await self.update(from: path) }
         }
         monitor.start(queue: queue)
     }

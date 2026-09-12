@@ -1,6 +1,6 @@
 # Licensing — the choice, and what it was checked against
 
-> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 Amphora is **MIT**. The licence text is at [`LICENSE`](../../LICENSE).
 
@@ -59,6 +59,7 @@ insofar as an obligation might travel inward, and none does.
 | Android runtime | `androidx.annotation`, `androidx.room:room-runtime`, `androidx.room:room-ktx`, `androidx.work:work-runtime-ktx` | Apache-2.0 | POM `<licenses>` on Google Maven, read against the `dependencies` block of `android/build.gradle.kts` |
 | Android runtime | `kotlinx-coroutines-android` 1.8.1, `okhttp` 4.12.0 | Apache-2.0 | POM `<licenses>` on Maven Central |
 | Android build-time | `androidx.room:room-compiler` (kapt) | Apache-2.0; BSD | POM `<licenses>`. Annotation processor — runs at build time, ships nothing. |
+| Android build-time | `androidx.room:room-gradle-plugin` 2.6.1 (via `id("androidx.room")`) | Apache-2.0 | POM `<licenses>` on Google Maven, read 2026-09-12. Gradle plugin — configures the processor's schema input/output directories at build time, ships nothing. |
 | Android test-only | `junit` 4.13.2 | EPL-1.0 | POM `<licenses>`. **Weak copyleft, and the only reason it is harmless is that it is `testImplementation`** — not on any consumer's classpath. |
 | Android test-only | `org.json:json` 20240303 | Public Domain | POM `<licenses>`. The historical "Good, not Evil" JSON License clause is *not* present in this version — checked, not assumed. |
 | React Native | `react-native` (peer, `>=0.76.0`) | MIT | `package-lock.json` |

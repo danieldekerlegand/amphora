@@ -1,6 +1,6 @@
 # Changelog
 
-> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 Notable changes to Amphora. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project intends [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from `0.x`, with
@@ -26,6 +26,108 @@ Two conventions, both consequences of how this repository treats evidence
 ---
 
 ## [Unreleased]
+
+### 2026-09-12
+
+#### Fixed
+
+- **Every CI job is green on one run id, for the first time in this repository's life — on a branch,
+  not on `main`.** Run `34675666580` (head `3b6f934`, `chief/140-ci-green-at-the-root`), **both
+  attempts on the identical sha**: `ios`, `android`, `conformance-fixture`, `verify-policy` and
+  `react-native` all `success`. Two attempts rather than one because this gate has flipped its verdict
+  on unchanged input before, and one green run after a red one proves nothing about the input. The
+  `ios` job reached its later steps for the first time ever — it used to die at `swift build` — and
+  printed `Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6
+  transport vectors)` and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`. The `android`
+  job's real wire ran end to end: `Kotlin real wire: 8 MiB uploaded across an aborted PATCH, resumed
+  by a new client from server offset 6553600, checksum verified, peak extra disk 0 KiB`.
+  **This does not close [`ROADMAP.md` phase 1](ROADMAP.md#phase-1--make-the-gate-total)**, whose exit
+  condition names a run and which has only ever been tested on branches; chief merges locally and
+  pushes nothing, so the `main` run is an operator step and phase 1 lists it.
+
+- **MinIO is pulled from `quay.io` instead of Docker Hub, at the identical digest.** The `android`
+  job's `Start tusd + MinIO` step failed on run `34675398053` with `pull access denied for
+  minio/minio, repository does not exist or may require 'docker login'`. Docker Hub answers `401` for
+  the pinned digest **and** for `latest` on `minio/minio`, while `tusproject/tusd` on the same
+  registry answers `200` — so the repository stopped serving anonymous pulls; the digest had not
+  rotted. quay.io returns the same `docker-content-digest` (`sha256:14cea493…8936e`) for the same
+  `RELEASE.2025-09-07T16-13-09Z` tag, so `integration/tusd/docker-compose.yml` changed host and
+  nothing else, provably. This is a second way a pin can stop resolving — the first was a withdrawn
+  tag — and nothing in the tree detects either ahead of a red run; phase 3 still carries that.
+
+- **The Room schema export race is fixed at the configuration, and the exported schema is now in
+  version control.** `:android:kaptReleaseKotlin` had died with
+  `java.lang.IllegalStateException: Empty schema file` on run `33044503283` and then passed on the
+  next run whose input differed by one JSON tasklist file — a gate flipping its verdict on
+  effectively unchanged input. The mechanism was established from the Room 2.6.1 sources before
+  anything was changed: under the raw `room.schemaLocation` processor option, `Context.kt`
+  resolves `schemaInFolderPath` and `schemaOutFolderPath` to the *same* directory, both variant
+  kapt tasks (started 0.5 ms apart — `02:51:02.2888336Z` and `02:51:02.2893492Z` in run
+  `34556064209`) read and write the one file
+  `schemas/dev.amphora.store.UploadDatabase/1.json`, and `Database.exportSchema` serializes
+  through `FileOutputStream(file, false)`, so the file is zero bytes for the width of a write and
+  a concurrent reader gets Gson's `null` and the exception — `SchemaBundle.kt:69` <-
+  `Database.kt:110`, the exact two frames of the observed stack. The fix is the Room Gradle Plugin
+  (`id("androidx.room")` 2.6.1, the same version as `room-runtime`/`room-compiler`) with
+  `room { schemaDirectory("$projectDir/schemas") }`; the `kapt { arguments { arg("room.schemaLocation", ...) } }`
+  block is gone, because the two mechanisms together are an error in Room's own check
+  (`INVALID_GRADLE_PLUGIN_AND_SCHEMA_LOCATION_OPTION`). The plugin gives each variant task its own
+  output directory under `build/intermediates/room/schemas/<task>` and copies into the committed
+  directory from a task both kapt tasks are `finalizedBy`, so no two writers share a target.
+  `android/schemas/dev.amphora.store.UploadDatabase/1.json` is committed with the bytes Room
+  itself wrote, retrieved from CI run `34675294998`, and a new `android` job step fails the build
+  whenever the exported schema and the committed one differ — which is both how the file was
+  retrieved and what stops a later entity change shipping without its schema. Observed on branch
+  run `34675398053` (head `076d82d`): `:android:assemble` SUCCESS, the schema step SUCCESS
+  (`android/schemas is clean: the exported schema equals the committed one`),
+  `:android:testDebugUnitTest` SUCCESS with `ConformanceVectorsTest > sharedVectorsMatchAndroidPort
+  PASSED` and `sharedI6VectorsHoldForTheAndroidTransport PASSED`, `> Task :android:copyRoomSchemas
+  NO-SOURCE` (the steady state: an unchanged schema is not re-written, so there is nothing to
+  copy), and **zero** log lines matching `room.schemaLocation` or `Schema export directory`. One
+  warning survives on `:android:kaptDebugUnitTestKotlin`, quoted rather than called gone:
+  `warning: The following options were not recognized by any processor: '[room.internal.schemaInput, room.internal.schemaOutput, kapt.kotlin.generated]'`
+  — the plugin configures the unit-test component too, and no `kaptTest` processor is declared to
+  claim the options. A green `android` job is deliberately **not** offered as the evidence here:
+  that job was already green on the unchanged tree, and the ROADMAP's exit rule says a green run
+  after a red one on unchanged input closes nothing. The evidence is the mechanism plus the
+  configuration that removes it. kapt's `Kapt currently doesn't support language version 2.0+.
+  Falling back to 1.9.` warning is untouched and out of scope.
+
+- **`BackgroundSessionManager` has a concurrency model, and the `ios` CI job's two compile errors go
+  away because of it.** The type carried two unguarded pieces of mutable state (`systemCompletionHandler`
+  and a `lazy var session`) and no statement of which thread touched what, so the `ios` job had been
+  red since its first run on `NetworkGovernor.swift:23` (`reference to captured var 'self'`) and
+  `TUSKitTransport.swift:27` (`BackgroundSessionManager` not `Sendable` inside a `Sendable` struct) —
+  meaning `swift run AmphoraPathTests` and the Swift drift control had never once executed in CI. Both
+  mutable fields are now guarded by one `NSLock` (`NSLock` and not `OSAllocatedUnfairLock`: the package
+  minimum is iOS 15), the session is created eagerly in `init`, the conformance is `@unchecked Sendable`
+  with a per-property table justifying it, and `urlSessionDidFinishEvents` takes the system completion
+  handler and clears it in a single critical section — which also fixes a latent double-call when two
+  batches of events were replayed close together. `ROADMAP.md` §4 asked who owns this model; this is
+  the answer.
+- `NetworkGovernor.start()` binds `guard let self` before the `Task`, so the `Task` captures a `let`
+  rather than the `var` a weak capture produces. The capture stays weak — the actor owns the
+  `NWPathMonitor`, and `stop()` does not clear `pathUpdateHandler`, so a strong capture there is a
+  retain cycle nothing breaks.
+- `SQLiteUploadStore` hands its `sqlite3` handle to a small owning class whose own `deinit` closes it.
+  An actor's `deinit` is nonisolated, so the previous `deinit { sqlite3_close(database) }` read a
+  non-`Sendable` `OpaquePointer` from nonisolated code — an error in the Swift 6 language mode.
+  **Swift: verified locally**; a clean build under `-Xswiftc -warnings-as-errors
+  -Xswiftc -strict-concurrency=complete` now reports zero diagnostics where it reported two.
+
+#### Removed
+
+- `BackgroundUploadStarter`, the `@unchecked Sendable` wrapper struct that existed only because
+  `BackgroundSessionManager` had no concurrency model to point at. `BackgroundUploadStarting` now
+  refines `Sendable` directly and both transports store their session reference without a wrapper.
+
+#### Changed
+
+- `.chief/verify.sh` builds Swift with `-Xswiftc -warnings-as-errors`, the flag the `ios` job uses.
+  This closes the *flag* half of the divergence in
+  [Continuous integration § Known divergence](docs/reference/continuous-integration.md); the
+  toolchain half cannot be closed locally, so the `ios` job gained a first step printing
+  `swift --version` and `xcodebuild -version` to name the compiler behind the next one.
 
 ### 2026-09-03
 

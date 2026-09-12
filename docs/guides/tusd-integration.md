@@ -1,6 +1,6 @@
 # Real tusd integration
 
-> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 The wire layers are exercised against the pinned server and an S3-compatible backend by
 [`integration/tusd/run.sh`](../../integration/tusd/run.sh). The environment uses tusd v2.4.0,
@@ -31,6 +31,18 @@ a tag is mutable inventory that a publisher can prune, while a digest is content
 cannot be repointed. `mc` ships inside the `minio` image, so there is no separate `minio/mc` pin to
 rot. To bump: pull the tag, read `docker image inspect --format '{{index .RepoDigests 0}}'`, and
 update both the digest and the release comment together.
+
+**MinIO is pulled from `quay.io`, not Docker Hub — changed 2026-09-12.** Docker Hub stopped serving
+`minio/minio` to anonymous pulls: `registry-1.docker.io/v2/minio/minio/manifests/<ref>` answers
+`401` for the pinned digest *and* for `latest`, so the repository is gated rather than the digest
+having rotted (`tusproject/tusd` on the same registry still answers `200`). The `android` job failed
+at `compose up` with `pull access denied for minio/minio, repository does not exist or may require
+'docker login'` on run `34675398053`. quay.io serves the identical manifest list — its
+`docker-content-digest` for `RELEASE.2025-09-07T16-13-09Z` is the same `sha256:14cea493…8936e` — so
+only the host changed and the bytes are provably the ones that were there before. That is the second
+distinct way a pin can stop resolving, after a withdrawn tag: the registry can withdraw *access*.
+Nothing here detects either in advance; [`ROADMAP.md` phase 3](../../ROADMAP.md#phase-3--repair-and-then-gate-the-real-wire-environment)
+carries that gap.
 
 ## Run it
 
@@ -150,3 +162,16 @@ Both clients use the tus 1.0 dialect expected by tusd v2 and the shared pinned v
 RUFH interop pin used by the native iOS path remains separately pinned to `8` in
 `TusProtocol`/`TusTransport`; a server returning an unsupported version is a protocol error, never
 an implicit fallback.
+
+## Corrections
+
+**2026-09-12, tasklist `140-ci-green-at-the-root`.** § Image pins said the MinIO images are pinned
+by digest and implied that a digest pin resolves; it did not, and the harness could not start in CI.
+What the document said: the withdrawn `RELEASE.*` tags were the failure mode a digest pin removes.
+What the tree says: `integration/tusd/docker-compose.yml` now pins `quay.io/minio/minio@sha256:14cea493…8936e`.
+What was read to tell them apart: the Docker Hub registry API answered `401` for that digest and for
+`latest` on `minio/minio` while answering `200` for `tusproject/tusd`, and quay.io returned the same
+`docker-content-digest` for the same release tag — so the gate is on the repository, not the digest.
+**What this pass did not check:** whether any *other* pinned digest in this tree still resolves, and
+nothing in the repository detects the next withdrawal ahead of a red run — [`ROADMAP.md` phase 3](../../ROADMAP.md#phase-3--repair-and-then-gate-the-real-wire-environment)
+still carries that as open.

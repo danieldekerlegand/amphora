@@ -1,6 +1,6 @@
 # Continuous integration
 
-> **Status:** Live · **Updated:** 2026-09-03 · **Owner:** Amphora
+> **Status:** Live · **Updated:** 2026-09-12 · **Owner:** Amphora
 
 Until 2026-08-26 this repository had **no git remote**. `.github/workflows/ci.yml` had existed
 for weeks and had never executed on any machine, which made every Android claim in this
@@ -196,27 +196,42 @@ cannot be re-flattened without turning CI red.
 
 ### Known divergence: `verify.sh` is not identical to CI
 
-Two gaps remain, and both are recorded rather than papered over:
+The flag gap is closed — `verify.sh` and CI now build Swift with the same `-Xswiftc -warnings-as-errors`.
+Two gaps remain, and both are recorded rather than papered over: the two environments run different
+Swift compilers, and they run different Gradle tasks.
 
-- `verify.sh` runs `swift build --package-path ios`; CI runs it with `-Xswiftc -warnings-as-errors`.
-  The `ios` job is red on Swift-concurrency errors that the local toolchain does not surface at all,
-  so a green local build does not predict a green run. **This table is the single home for that
-  count** — anywhere else that needs it links here, because it changes as the errors are fixed.
-  First observed on run 33041928703 and re-read on 2026-09-03 from run 33044503283, the most recent
-  run of any branch; two remain, and nothing in this repository owns either:
+- **The Swift error count is zero, first observed 2026-09-12 on run `34675666580`, attempts 1 and 2.**
+  **This table is the single home for that count** — anywhere else that needs it links here, because
+  it changes as errors appear and are fixed.
 
   | Where | Error |
   |---|---|
-  | `Governor/NetworkGovernor.swift:23` | reference to captured `var 'self'` in concurrently-executing code |
-  | `Transport/TUSKitTransport.swift:27` | stored property `session` of `Sendable`-conforming struct has non-`Sendable` type `BackgroundSessionManager` |
+  | — | none |
 
-  A third, the same complaint against `NativeResumableTransport`, was retired by the I6 seam: that
-  transport now stores a `BackgroundUploadStarter`, a wrapper whose `@unchecked Sendable` claim
-  covers exactly one call. That is a narrow assertion about `startUpload`, not the redesign
-  `BackgroundSessionManager` still needs — `TUSKitTransport` holds the same object directly and is
-  still red for it. Because the build fails at that first step, the `ios` job never reaches
-  `swift run` or the Swift drift control; both are run locally instead, and story notes record what
-  they printed.
+  Two errors used to live here and had been red on every run in this job's life: `NetworkGovernor.swift:23`
+  (reference to captured `var 'self'` in concurrently-executing code) and `TUSKitTransport.swift:27`
+  (stored property `session` of a `Sendable`-conforming struct has non-`Sendable` type
+  `BackgroundSessionManager`). Both had one root — `BackgroundSessionManager` had mutable state and no
+  concurrency model — and both went away when tasklist `140` gave it one: the two mutable fields are
+  guarded by a single `NSLock`, the session is built eagerly in `init`, and the class is
+  `@unchecked Sendable` with a per-property table as the justification. The third complaint, against
+  `NativeResumableTransport`, had been retired earlier by the I6 seam's `BackgroundUploadStarter`
+  wrapper; that wrapper is now **deleted**, because `BackgroundUploadStarting` refines `Sendable` and
+  both conformers meet it without an escape hatch.
+
+  **The flag gap is closed; the toolchain gap is not, and cannot be.** `verify.sh` now builds with
+  `-Xswiftc -warnings-as-errors` too, so the two commands match. The compilers still do not:
+  run `34675666580`'s `ios` job printed `Apple Swift version 5.10 (swiftlang-5.10.0.13 clang-1500.3.9.4)`
+  and `Xcode 15.4`, while the machine this work was authored on runs Swift 6.3.3 and Xcode 26.6. Those
+  two disagree about concurrency diagnostics in **both** directions — the newer one was silent on the
+  errors above, and a local `-Xswiftc -strict-concurrency=complete` build surfaced a mutability error
+  on `BackgroundSessionManager.swift:29` that CI never mentioned. A green local build is evidence, not
+  the gate. (`-strict-concurrency=complete` is deliberately **not** in CI: it is clean on one toolchain
+  only, and adding an unverifiable flag to a job that just went green is how it goes red again.)
+
+  Because the job now compiles, it reaches its later steps for the first time: attempt 1 printed
+  `Amphora path tests: 46 passed (4 upload-path cases, 39 state-machine vectors, 3 I6 transport vectors)`
+  and `drift-control: 2 control(s) ran, 0 skipped, 0 failure(s)`.
 - `verify.sh` runs `./gradlew build`; CI runs `:android:assemble` and `:android:testDebugUnitTest`.
 
 A green `verify.sh` therefore does not predict a green run. Check `gh run list` before believing a
@@ -225,6 +240,25 @@ branch is clean.
 ---
 
 ## Corrections
+
+**2026-09-12, tasklist `140-ci-green-at-the-root`.** § Known divergence was wrong in the only way
+that mattered: it listed two Swift-concurrency errors as current and said the `ios` job never reaches
+`swift run` or the Swift drift control.
+
+- **What the document said:** two errors remain, at `NetworkGovernor.swift:23` and
+  `TUSKitTransport.swift:27`, and "nothing in this repository owns either"; `NativeResumableTransport`
+  stores a `BackgroundUploadStarter` wrapper.
+- **What the tree says:** `BackgroundSessionManager` carries a written concurrency model with one
+  `NSLock` over its two mutable fields; `BackgroundUploadStarter` no longer exists (`BackgroundUploadStarting`
+  refines `Sendable`); `.chief/verify.sh` passes `-Xswiftc -warnings-as-errors`.
+- **What was read to tell them apart:** run `34675666580` on `chief/140-ci-green-at-the-root`, attempts
+  1 and 2, both with all five jobs `success`; the `ios` job log's `46 passed` and
+  `2 control(s) ran, 0 skipped, 0 failure(s)` lines, neither of which had ever appeared in CI before.
+
+**What this pass did not check:** that the same is true on `main`. Both attempts are on a tasklist
+branch, and [`ROADMAP.md` phase 1](../../ROADMAP.md#phase-1--make-the-gate-total) does not close until a
+`main` run says it. It also did not re-audit the second divergence bullet (`./gradlew build` versus
+`:android:assemble` + `:android:testDebugUnitTest`), which is unchanged and still real.
 
 **2026-09-03, tasklist `901-docs-tell-the-truth`.** Nothing in this document was found wrong. It
 was read against `.github/workflows/ci.yml` and `.chief/verify.sh` — the five job names, the four

@@ -4,6 +4,7 @@ plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
+    id("androidx.room")
 }
 
 android {
@@ -77,13 +78,32 @@ android {
     }
 }
 
-kapt {
-    arguments {
-        // UploadDatabase declares exportSchema = true deliberately: migrations must move rows in
-        // place, and that is unreviewable without the schema history. Room warns and exports
-        // nothing unless it is told where to put them.
-        arg("room.schemaLocation", "$projectDir/schemas")
-    }
+// UploadDatabase declares exportSchema = true deliberately: migrations must move rows in place,
+// and that is unreviewable without the schema history. Room warns and exports nothing unless it
+// is told where to put them.
+//
+// This is the Room Gradle Plugin's job, NOT `kapt { arguments { arg("room.schemaLocation", ...) } }`
+// — and the difference is a build failure this job actually hit. Under the raw option, Room reads
+// `schemaInFolderPath` and `schemaOutFolderPath` from the SAME value (Context.kt:150-178 of Room
+// 2.6.1), so `:android:kaptDebugKotlin` and `:android:kaptReleaseKotlin` — which Gradle starts
+// concurrently; 02:51:02.2888336Z and 02:51:02.2893492Z in run 34556064209 — both read and both
+// truncate ONE file, `schemas/dev.amphora.store.UploadDatabase/1.json`. `Database.exportSchema`
+// serializes through `FileOutputStream(file, false)`, so that file is zero bytes for the width of
+// a write, and the other variant deserializing it there gets Gson's null and
+// `IllegalStateException("Empty schema file")` — SchemaBundle.kt:69 <- Database.kt:110, the exact
+// frames of run 33044503283. The plugin gives each variant task its own output directory under
+// `build/intermediates/room/schemas/<task>`, leaves this directory read-only to the processor, and
+// copies in afterwards from a task both kapt tasks are `finalizedBy`. Nothing shares a write
+// target, so there is no window to lose.
+//
+// The two mechanisms are also mutually exclusive by Room's own check: setting both makes
+// `room.internal.schemaOutput` and `room.schemaLocation` visible at once, which Room reports as
+// INVALID_GRADLE_PLUGIN_AND_SCHEMA_LOCATION_OPTION — an error, not a warning.
+//
+// kapt's `Kapt currently doesn't support language version 2.0+. Falling back to 1.9.` warning is
+// real and still here. Moving to KSP is a `replace` tasklist, not this fix.
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 dependencies {
