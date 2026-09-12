@@ -10,10 +10,20 @@
 #
 # When bumping: pull the tag, read `docker image inspect --format '{{index .RepoDigests 0}}'`, and
 # record the human-readable release beside the digest so the pin stays auditable.
+#
+# MinIO is pulled from quay.io, not Docker Hub — 2026-09-12. Docker Hub's `minio/minio` stopped
+# answering anonymous pulls entirely: `registry-1.docker.io/v2/minio/minio/manifests/<ref>` returns
+# 401 for the digest below AND for `latest`, so it is the repository that is gated, not a rotted
+# digest (`tusproject/tusd` on the same registry still answers 200). The `android` job failed at
+# `compose up` with `pull access denied for minio/minio, repository does not exist or may require
+# 'docker login'` on run 34675398053. quay.io serves the SAME manifest list — its
+# docker-content-digest for `RELEASE.2025-09-07T16-13-09Z` is the identical
+# sha256:14cea493…8936e — so this is a registry change and provably not an image change. That is
+# the property a digest pin is for: the bytes are addressed, the host is only where they are kept.
 services:
   minio:
-    # minio/minio:RELEASE.2025-09-07T16-13-09Z
-    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    # quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     # No --console-address: the community image dropped the admin console, and this harness never
     # used it. One less flag and one less published port to collide with.
     command: server /data
@@ -26,7 +36,7 @@ services:
   create-bucket:
     # Reuses the minio image on purpose. `mc` ships inside it at /usr/bin/mc, so the separate
     # minio/mc pin bought nothing but a second tag that could rot independently — and did.
-    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     depends_on:
       - minio
     entrypoint: ["/bin/sh", "-c"]
