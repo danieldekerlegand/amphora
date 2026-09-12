@@ -62,6 +62,30 @@ jobs:
       - name: Build Android library
         # --stacktrace: the kapt worker failures this job has hit print nothing else.
         run: ./gradlew --no-daemon --stacktrace :android:assemble
+      # Room's exported schema belongs in version control — it is the only record of what the
+      # table looked like at each version, and a migration that moves rows in place is
+      # unreviewable without it. This step is BOTH the gate and the retrieval mechanism: an
+      # entity change that ships without its schema leaves the working tree dirty here and the
+      # job goes red printing the bytes Room produced, which is exactly what you commit. Do not
+      # relax it to a warning; the committed file is only trustworthy while something checks it.
+      - name: Exported Room schema matches the committed one
+        run: |
+          if [ -n "$(git status --porcelain -- android/schemas)" ]; then
+            echo "The schema Room exported differs from the one committed under android/schemas."
+            echo '--- git status --porcelain -- android/schemas ---'
+            git status --porcelain -- android/schemas
+            echo '--- git diff -- android/schemas ---'
+            git --no-pager diff -- android/schemas
+            echo '--- every file Room wrote; commit these bytes verbatim ---'
+            find android/schemas -type f -print -exec cat {} \;
+            exit 1
+          fi
+          if [ ! -d android/schemas ]; then
+            echo 'android/schemas does not exist after the build — Room exported nothing.'
+            exit 1
+          fi
+          echo 'android/schemas is clean: the exported schema equals the committed one.'
+          find android/schemas -type f -print
       - name: Run Android conformance vectors
         run: ./gradlew --no-daemon :android:testDebugUnitTest
       # THE REAL WIRE. Tasklist 80 recorded "both platforms complete an upload against a real tusd
