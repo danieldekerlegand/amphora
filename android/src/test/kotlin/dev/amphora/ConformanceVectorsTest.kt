@@ -1,8 +1,18 @@
 package dev.amphora
 
+import dev.amphora.core.ContentSource
 import dev.amphora.core.SeekableSource
+import dev.amphora.core.SourcePreparation
+import dev.amphora.core.SourceResolver
 import dev.amphora.core.UploadStateMachine
+import dev.amphora.governor.SpaceAllocator
+import dev.amphora.governor.StorageGovernor
 import dev.amphora.model.*
+import dev.amphora.transport.TusTransport
+import kotlinx.coroutines.runBlocking
+import android.content.ContextWrapper
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 import dev.amphora.transport.RangeRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import okio.Buffer
@@ -95,7 +105,7 @@ class ConformanceVectorsTest {
          * by a generator cannot rewrite its own expectations along with it. Adding a vector is
          * meant to require touching both ports; that friction is the point.
          */
-        const val EXPECTED_SCHEMA_VERSION = 2
+        const val EXPECTED_SCHEMA_VERSION = 3
         const val EXPECTED_VECTOR_COUNT = 40
 
         /**
@@ -112,6 +122,14 @@ class ConformanceVectorsTest {
          * got 1" rather than pass as a full I6 run.
          */
         const val EXPECTED_I6_VECTOR_COUNT = 3
+
+        /**
+         * The `sourceStaging` rows: the decision ladder of persistence-and-recovery.md §3, run
+         * through the engine's own preparation step. Counted here for the same reason as the
+         * rest — a section trimmed to one row must fail as "expected 3, got 1" rather than pass
+         * as a full staging run.
+         */
+        const val EXPECTED_STAGING_VECTOR_COUNT = 3
     }
 
     @Test
@@ -266,6 +284,185 @@ class ConformanceVectorsTest {
             .filter { it != directory }
             .map { it.relativeTo(directory).path }
             .toSet()
+
+
+    // MARK: - the staging rows -----------------------------------------------------------------
+
+    /**
+     * The decision ladder — the one step in an upload's life that no transition vector reaches.
+     *
+     * `vectors` is a pure-function suite over `reduce`, so "does this source need copying, and
+     * what happens when the copy is refused" was checked by nothing on either port. Swift's
+     * answer had simply gone missing: `SourceResolver.stageIfRequired` had zero callers while
+     * forty vectors reported green, and every `ph://` job reached the transport as a file URL
+     * whose path was the literal string `ph://...`.
+     *
+     * These rows drive [SourcePreparation.prepare] — the function [dev.amphora.core.DefaultUploadEngine]
+     * itself calls — and not `stageIfRequired`. The defect was a missing caller, so a row aimed at
+     * the callee would have passed against it.
+     *
+     * Every row runs even when an earlier one fails: a red staging suite should say which of the
+     * three properties broke, not only the first.
+     */
+    @Test
+    fun sharedStagingVectorsHoldForTheAndroidPreparationStep() {
+        val root = ConformanceVectors.load()
+        val section = root.optJSONObject("sourceStaging")
+            ?: throw AssertionError(
+                "conformance vectors at ${ConformanceVectors.file()}: missing `sourceStaging` — " +
+                    "dropping that section would silently drop the only check on the staging decision",
+            )
+        val rows = section.optJSONArray("rows")
+            ?: throw AssertionError(
+                "conformance vectors at ${ConformanceVectors.file()}: missing `sourceStaging.rows`",
+            )
+        assertEquals(EXPECTED_STAGING_VECTOR_COUNT, rows.length(), "staging vector count in ${ConformanceVectors.file()}")
+
+        val failures = mutableListOf<String>()
+        var checked = 0
+        for (index in 0 until rows.length()) {
+            val row = rows.getJSONObject(index)
+            checked++
+            runCatching { runStagingVector(row) }
+                .onFailure { failures += "${row.getString("id")}: ${it.message}" }
+        }
+        assertEquals(
+            EXPECTED_STAGING_VECTOR_COUNT,
+            checked,
+            "staging vectors actually executed — 'ran 0 vectors' is a failure, not a pass",
+        )
+        if (failures.isNotEmpty()) throw AssertionError(failures.joinToString("\n"))
+    }
+
+    private fun runStagingVector(row: JSONObject) = runBlocking {
+        val id = row.getString("id")
+        val sizeBytes = row.getLong("sizeBytes")
+        val seekable = row.getBoolean("sourceSeekable")
+        val reservationGranted = row.getString("reservation") == "granted"
+        val expect = row.getJSONObject("expect")
+
+        val files = Files.createTempDirectory("amphora-staging").toFile()
+        try {
+            val sourceBytes = ByteArray(sizeBytes.toInt()) { (it % 251).toByte() }
+            val context = TestContext(files)
+            val storage = StorageGovernor(
+                context,
+                SpaceAllocator { _, bytes ->
+                    // A real refusal is the OS declining to hold the bytes against cache
+                    // eviction, which StorageGovernor turns into StorageReservationDenied.
+                    if (!reservationGranted) throw java.io.IOException("refused $bytes bytes")
+                },
+            )
+            val sources = SourceResolver(context, FakeContentSource(files, sourceBytes, seekable))
+            val job = UploadJob(
+                id = id,
+                // Android's unseekable source is a content provider; so is its seekable one. The
+                // seam decides which, because the mockable android.jar cannot.
+                sourceKind = SourceKind.CONTENT_URI,
+                sourceUri = "content://dev.amphora.vector/$id",
+                sizeBytes = sizeBytes,
+                contentType = "application/octet-stream",
+                fingerprint = "vector",
+                endpoint = "https://example.test/uploads",
+                createdAt = 1, updatedAt = 1,
+            )
+
+            // One log for both effects: "the copy happened BEFORE the remote was created" is not
+            // assertable from two separate lists.
+            val calls = mutableListOf<String>()
+            val events = mutableListOf<UploadEvent>()
+            val created = SourcePreparation.prepare(
+                job = job,
+                sources = sources,
+                storage = storage,
+                dispatch = { event ->
+                    events += event
+                    calls += event::class.simpleName ?: "?"
+                },
+                create = {
+                    calls += "create"
+                    TusTransport.CreateResult("https://example.test/uploads/1", null)
+                },
+            )
+
+            assertEquals(expect.getBoolean("remoteCreated"), created, "$id: the remote was created")
+            assertEquals(expect.getBoolean("remoteCreated"), calls.contains("create"), "$id: `create` reached the wire")
+
+            val resolved = events.filterIsInstance<UploadEvent.SourceResolved>().firstOrNull()
+            when (expect.getString("event")) {
+                "SourceResolved" -> assertTrue(resolved != null, "$id: no SourceResolved was dispatched; events were $events")
+                "SpaceDenied" -> {
+                    val denied = events.filterIsInstance<UploadEvent.SpaceDenied>().firstOrNull()
+                        ?: throw AssertionError("$id: no SpaceDenied was dispatched; events were $events")
+                    if (expect.optBoolean("neededEqualsSizeBytes")) {
+                        assertEquals(sizeBytes, denied.needed, "$id: SpaceDenied.needed")
+                    }
+                    assertTrue(resolved == null, "$id: a refused source still announced SourceResolved")
+                }
+                else -> throw AssertionError("$id: unknown expected event ${expect.getString("event")}")
+            }
+
+            if (expect.getBoolean("staged")) {
+                val stagedPath = resolved?.stagedPath
+                    ?: throw AssertionError("$id: SourceResolved carried no stagedPath — the source was not staged")
+                val staged = File(stagedPath)
+                assertTrue(
+                    staged.parentFile?.absolutePath == storage.stagingDir().absolutePath,
+                    "$id: staged outside the reservation directory: $stagedPath",
+                )
+                if (expect.optBoolean("stagedBytesEqualSource")) {
+                    assertTrue(staged.readBytes().contentEquals(sourceBytes), "$id: the staged bytes are not the source's")
+                }
+                if (expect.optBoolean("stagedBeforeRemoteCreated")) {
+                    val announced = calls.indexOf("SourceResolved")
+                    val createdAt = calls.indexOf("create")
+                    assertTrue(
+                        announced >= 0 && createdAt > announced,
+                        "$id: the copy must precede `create` — a reservation refused afterwards has " +
+                            "already orphaned a server resource. Calls were $calls",
+                    )
+                }
+            } else {
+                assertTrue(resolved?.stagedPath == null, "$id: a seekable source was copied to ${resolved?.stagedPath}")
+            }
+
+            // The staging directory is this row's own — created empty under a fresh temp root —
+            // so what is in it at the end is exactly what the row created.
+            assertEquals(
+                expect.getInt("filesCreatedInStagingDirectory"),
+                storage.stagingDir().listFiles().orEmpty().size,
+                "$id: files left in the staging directory",
+            )
+        } finally {
+            files.deleteRecursively()
+        }
+    }
+
+    /**
+     * A provider that is seekable or not, on demand. The real one answers through
+     * `ContentResolver` and `Os.lseek`, neither of which exists in a JVM unit test — with
+     * `isReturnDefaultValues` on, `Os.lseek` returns 0 for every descriptor, so the real path
+     * would report every provider seekable and `stage-01` could never be presented.
+     */
+    private class FakeContentSource(
+        directory: File,
+        private val bytes: ByteArray,
+        private val seekable: Boolean,
+    ) : ContentSource {
+        private val backing = File(directory, "provider.bin").apply { writeBytes(bytes) }
+
+        override fun openSeekable(uri: String): SeekableSource {
+            if (!seekable) throw SourceResolver.NonSeekableSourceException(uri, java.io.IOException("ESPIPE"))
+            return SeekableSource.fromFile(backing)
+        }
+
+        override fun openStream(uri: String): InputStream = ByteArrayInputStream(bytes)
+    }
+
+    /** The same shape [StorageGovernorTest] uses: a real ContextWrapper with a real files dir. */
+    private class TestContext(private val files: File) : ContextWrapper(null) {
+        override fun getFilesDir(): File = files
+    }
 
     private fun job(given: JSONObject): UploadJob = UploadJob(
         id = "vector", sourceKind = SourceKind.FILE, sourceUri = "vector", sizeBytes = given.optLong("sizeBytes", 1000),

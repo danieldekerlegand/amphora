@@ -7,7 +7,6 @@ import dev.amphora.UploadRequest
 import dev.amphora.governor.NetworkGovernor
 import dev.amphora.governor.StorageGovernor
 import dev.amphora.governor.StoragePressure
-import dev.amphora.governor.StorageReservationDenied
 import dev.amphora.model.*
 import dev.amphora.store.UploadDao
 import dev.amphora.transport.*
@@ -154,12 +153,10 @@ class DefaultUploadEngine(
         if (job.uploadUrl == null) {
             val prepared = try {
                 prepare(job)
-            } catch (error: StorageReservationDenied) {
-                // The provider cannot be streamed and the OS refused the real reservation. Keep
-                // this typed as SpaceDenied so the machine blocks instead of creating remotely.
-                dispatch(jobId, UploadEvent.SpaceDenied(error.requestedBytes))
-                return SliceOutcome.SLICE_DONE
             } catch (error: Exception) {
+                // StorageReservationDenied no longer arrives here: SourcePreparation maps it to
+                // SpaceDenied itself and returns null, which lands on the same SLICE_DONE below.
+                // It moved so a conformance row can observe the event rather than the exception.
                 dispatch(jobId, UploadEvent.TransportError(transport.classify(error), error.message))
                 return SliceOutcome.RETRY
             } ?: return SliceOutcome.SLICE_DONE
@@ -213,17 +210,16 @@ class DefaultUploadEngine(
         }
     }
 
+    /** The decision itself lives in [SourcePreparation] — the only unit a JVM test can drive. */
     private suspend fun prepare(job: UploadJob): UploadJob? {
-        val staged = sources.stageIfRequired(job, storage)
-            ?: if (job.sourceKind == SourceKind.CONTENT_URI && job.stagedPath == null) {
-                dispatch(job.id, UploadEvent.SpaceDenied(job.sizeBytes)); return null
-            } else null
-
-        dispatch(job.id, UploadEvent.SourceResolved(job.sizeBytes, job.fingerprint, staged?.path))
-
-        val created = transport.create(job.endpoint, job.sizeBytes, decodeMetadata(job.metadataJson))
-        dispatch(job.id, UploadEvent.RemoteCreated(created.uploadUrl, created.expiresAt))
-        return dao.get(job.id)
+        val created = SourcePreparation.prepare(
+            job = job,
+            sources = sources,
+            storage = storage,
+            dispatch = { event -> dispatch(job.id, event) },
+            create = { transport.create(it.endpoint, it.sizeBytes, decodeMetadata(it.metadataJson)) },
+        )
+        return if (created) dao.get(job.id) else null
     }
 
     private suspend fun finalize(jobId: String): SliceOutcome {

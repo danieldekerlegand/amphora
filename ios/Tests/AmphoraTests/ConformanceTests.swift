@@ -94,7 +94,7 @@ extension UploadPathTests {
     /// report a full run over a fraction of the rows. These numbers live in the test rather than
     /// in the fixture, so a fixture rewritten by a generator cannot rewrite its own expectations
     /// along with it. `ConformanceVectorsTest.kt` carries the identical three.
-    static let expectedSchemaVersion = 2
+    static let expectedSchemaVersion = 3
     static let expectedVectorCount = 40
 
     /// `Enqueue` is the one event that creates a job rather than reducing one, so it has no
@@ -329,5 +329,137 @@ private final class RecordingBackgroundSession: BackgroundUploadStarting, @unche
     func startUpload(jobId: String, request: URLRequest, fileURL: URL, expectedBytes: Int64) -> Int {
         started.append(Start(jobId: jobId, fileURL: fileURL, expectedBytes: expectedBytes))
         return started.count
+    }
+}
+
+// MARK: - Source staging, the step no transition vector reaches
+
+extension UploadPathTests {
+    /// The decision ladder (`persistence-and-recovery.md` §3): which sources cost a copy, and what
+    /// happens when the copy is refused.
+    ///
+    /// `vectors` is a pure-function suite over `reduce`, so this step had no check of any kind on
+    /// either port — and on this one the answer had gone missing outright:
+    /// `SourceResolver.stageIfRequired` had ZERO callers while all forty vectors reported green,
+    /// so every `ph://` job reached the transport as a file URL whose path was the literal string
+    /// `ph://…`. The rows therefore drive the **engine**, not `stageIfRequired`: the defect was a
+    /// missing caller, and a row aimed at the callee would have passed against it.
+    ///
+    /// The rows are shared with Kotlin; the source is not, and cannot be. iOS has exactly one
+    /// source it cannot seek — a `ph://` Photos asset — where Android has a content provider whose
+    /// descriptor refuses `lseek`. `ConformanceVectorsTest.kt` presents its own pair to the same
+    /// three rows.
+    static let expectedStagingVectorCount = 3
+
+    @discardableResult
+    static func sourceStagingVectors() async throws -> Int {
+        let (url, _, _, root) = try ConformanceVectors.load()
+        guard let section = root["sourceStaging"] as? [String: Any],
+              let rows = section["rows"] as? [[String: Any]] else {
+            throw ConformanceVectorsError.malformed(
+                path: url.path,
+                detail: "missing `sourceStaging.rows` — dropping that section would silently drop the only check on the staging decision"
+            )
+        }
+        // Asserted before any row runs, as everywhere else here: a section trimmed to one row must
+        // fail as "expected 3, got 1", not pass as a full staging run.
+        precondition(rows.count == expectedStagingVectorCount, "expected \(expectedStagingVectorCount) staging vectors in \(url.path), got \(rows.count)")
+
+        var checked = 0
+        for row in rows {
+            try await runStagingVector(
+                id: row["id"] as! String,
+                sizeBytes: Int64(row["sizeBytes"] as! Int),
+                sourceSeekable: row["sourceSeekable"] as! Bool,
+                reservationGranted: (row["reservation"] as! String) == "granted",
+                expect: row["expect"] as! [String: Any]
+            )
+            checked += 1
+        }
+        precondition(checked == expectedStagingVectorCount, "ran \(checked) staging vectors, expected \(expectedStagingVectorCount) — 'ran 0 vectors' is a failure, not a pass")
+        return checked
+    }
+
+    private static func runStagingVector(
+        id: String, sizeBytes: Int64, sourceSeekable: Bool, reservationGranted: Bool, expect: [String: Any]
+    ) async throws {
+        var sourceBytes = Data(count: Int(sizeBytes))
+        for index in 0..<Int(sizeBytes) { sourceBytes[index] = UInt8(index % 251) }
+
+        // One log for the Photos double and the transport both: "the copy happened BEFORE the
+        // remote was created" is not assertable from two separate lists.
+        let log = CallLog()
+        let photos = FakePhotosAssetSource(log: log, bytes: sourceBytes)
+        // A refusal is modelled where iOS actually has one: no room for the reservation. There is
+        // no `allocateBytes` here — the governor compares against available capacity.
+        let storage = StorageGovernor(capacityProvider: { reservationGranted ? .max : 0 }, photos: photos)
+        let store = try temporaryStore()
+        let transport = RecordingTransport(log: log)
+        let engine = makeEngine(store: store, transport: transport, storage: storage, photos: photos)
+
+        // iOS's unseekable source is the one the platform has: a Photos asset. Its seekable
+        // counterpart is a plain file, which the background session uploads straight from at zero
+        // extra storage — the row that a fix staging *everything* would fail.
+        let sourceUri = sourceSeekable ? try temporaryFile(contents: sourceBytes).path : "ph://\(id)"
+
+        let stagingDirectory = try await storage.stagingDirectory()
+        let before = try inventory(of: stagingDirectory)
+
+        var request = UploadRequest(sourceUri: sourceUri, endpoint: "https://example.test/uploads", contentType: "application/octet-stream")
+        request.policy.allowsConstrainedNetwork = true
+        let jobId = try await engine.enqueue(request)
+
+        let calls = await log.calls
+        let job = try await store.get(id: jobId)
+
+        precondition(
+            calls.contains("create") == expect["remoteCreated"] as! Bool,
+            "\(id): expected remoteCreated=\(expect["remoteCreated"] as! Bool), calls were \(calls)"
+        )
+
+        switch expect["event"] as! String {
+        case "SourceResolved":
+            precondition(job?.state != .blocked, "\(id): the source was announced but the job is \(String(describing: job?.state))")
+        case "SpaceDenied":
+            // Swift reads the consequence rather than the event: `spaceDenied`'s `needed` payload
+            // is not retained on the row either port reads back. Kotlin observes the payload.
+            precondition(job?.state == .blocked, "\(id): state was \(String(describing: job?.state)), expected BLOCKED")
+            precondition(job?.blockReason == .storageLow, "\(id): blockReason was \(String(describing: job?.blockReason))")
+        case let other:
+            preconditionFailure("\(id): unknown expected event \(other)")
+        }
+
+        if expect["staged"] as! Bool {
+            guard let staged = job?.stagedPath else { preconditionFailure("\(id): the source was not staged") }
+            if expect["stagedInReservationDirectory"] as? Bool == true {
+                precondition(staged.hasPrefix(stagingDirectory.path + "/"), "\(id): staged outside the reservation directory: \(staged)")
+            }
+            if expect["stagedBytesEqualSource"] as? Bool == true {
+                let stagedBytes = try Data(contentsOf: URL(fileURLWithPath: staged))
+                precondition(stagedBytes == sourceBytes, "\(id): the staged bytes are not the source's")
+            }
+            if expect["stagedBeforeRemoteCreated"] as? Bool == true {
+                guard let exported = calls.firstIndex(of: "export"), let created = calls.firstIndex(of: "create") else {
+                    preconditionFailure("\(id): expected both an export and a create, calls were \(calls)")
+                }
+                precondition(
+                    exported < created,
+                    "\(id): the copy must precede `create` — a reservation refused afterwards has already orphaned a server resource. Calls were \(calls)"
+                )
+            }
+        } else {
+            precondition(job?.stagedPath == nil, "\(id): a seekable source was copied to \(job?.stagedPath ?? "")")
+        }
+
+        // The staging directory is the app's real one, shared with every other run on this
+        // machine, so what this row created is the difference — not the absolute contents.
+        let created = try inventory(of: stagingDirectory).subtracting(before)
+        precondition(
+            created.count == expect["filesCreatedInStagingDirectory"] as! Int,
+            "\(id): \(created.count) file(s) appeared in the staging directory (\(created.sorted().joined(separator: ", "))), expected \(expect["filesCreatedInStagingDirectory"] as! Int)"
+        )
+
+        // Leave nothing behind: the reservation is real and lands in Application Support.
+        await storage.release(jobId: jobId)
     }
 }

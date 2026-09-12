@@ -7,27 +7,34 @@ struct UploadPathTests {
     static let pathCases = 5
 
     static func main() async throws {
+        // The shared fixture runs FIRST, and deliberately. Every `precondition` here traps the
+        // process, so whichever check fails first is the only one a reader ever sees — and when a
+        // port drifts, the message worth seeing is the shared row's id, not a port-local case that
+        // happens to trip over the same defect one line earlier. A fixture the runner cannot find
+        // must fail this suite loudly rather than trap or, worse, be skipped into a green run.
+        let vectors: Int
+        let i6Vectors: Int
+        let stagingVectors: Int
+        do {
+            vectors = try conformanceVectors()
+            i6Vectors = try await i6NoChunkTempFileVectors()
+            stagingVectors = try await sourceStagingVectors()
+        } catch {
+            FileHandle.standardError.write(Data("Amphora path tests: FAILED — \(error)\n".utf8))
+            exit(1)
+        }
+
         try await plainFileUploadRunsCreateAppendCompleteInOrder()
         try await photosAssetIsStagedBeforeTheRemoteIsCreated()
         try await cancelDeletesStagedFile()
         try await remainderStreamsFromOffset()
         try await remainderAbortsAndCleansUpWhenPressureRises()
-        // The conformance vectors are the shared fixture, and a fixture the runner cannot find
-        // must fail this suite loudly rather than trap or, worse, be skipped into a green run.
-        let vectors: Int
-        let i6Vectors: Int
-        do {
-            vectors = try conformanceVectors()
-            i6Vectors = try await i6NoChunkTempFileVectors()
-        } catch {
-            FileHandle.standardError.write(Data("Amphora path tests: FAILED — \(error)\n".utf8))
-            exit(1)
-        }
         // Counted, not asserted from memory. A summary line whose number is a literal cannot tell
         // "the vectors ran" from "the vectors were skipped", which is the failure mode this whole
         // fixture exists to rule out.
-        print("Amphora path tests: \(pathCases + vectors + i6Vectors) passed "
-            + "(\(pathCases) upload-path cases, \(vectors) state-machine vectors, \(i6Vectors) I6 transport vectors)")
+        print("Amphora path tests: \(pathCases + vectors + i6Vectors + stagingVectors) passed "
+            + "(\(pathCases) upload-path cases, \(vectors) state-machine vectors, "
+            + "\(i6Vectors) I6 transport vectors, \(stagingVectors) source-staging vectors)")
     }
 
     private static func plainFileUploadRunsCreateAppendCompleteInOrder() async throws {
@@ -161,7 +168,7 @@ struct UploadPathTests {
 
     /// `capacityProvider: { .max }` by default: a test machine's real free space is not an input
     /// any of these cases means to depend on, and the two that do care pass their own governor.
-    private static func makeEngine(
+    static func makeEngine(
         store: any UploadStore,
         transport: RecordingTransport,
         storage: StorageGovernor = StorageGovernor(capacityProvider: { .max }),
@@ -184,18 +191,18 @@ struct UploadPathTests {
         )
     }
 
-    private static func temporaryStore() throws -> SQLiteUploadStore {
+    static func temporaryStore() throws -> SQLiteUploadStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("amphora-test-\(UUID().uuidString).sqlite")
         return try SQLiteUploadStore(url: url)
     }
 
-    private static func temporaryFile(contents: Data) throws -> URL {
+    static func temporaryFile(contents: Data) throws -> URL {
         let url = temporaryURL()
         try contents.write(to: url)
         return url
     }
 
-    private static func temporaryURL() -> URL {
+    static func temporaryURL() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("amphora-test-\(UUID().uuidString).bin")
     }
 }
@@ -214,7 +221,7 @@ private final class CapacityProbe: @unchecked Sendable {
 
 /// One log, shared by the transport and the Photos double. Ordering *between* the two is the
 /// property under test — an export recorded in its own list could not be placed before `create`.
-private actor CallLog {
+actor CallLog {
     private(set) var calls: [String] = []
 
     func record(_ call: String) {
@@ -222,7 +229,7 @@ private actor CallLog {
     }
 }
 
-private actor RecordingTransport: UploadTransport {
+actor RecordingTransport: UploadTransport {
     let log: CallLog
     private(set) var transferredJob: UploadJob?
 
@@ -254,7 +261,7 @@ private actor RecordingTransport: UploadTransport {
 /// Known bytes and a fixed modification date, so the fingerprint `probe` computes at enqueue is the
 /// one `isIntact` recomputes at transfer. Records only `export`: `metadata` is synchronous and is
 /// read on both paths, so logging it would say nothing about ordering.
-private struct FakePhotosAssetSource: PhotosAssetSource {
+struct FakePhotosAssetSource: PhotosAssetSource {
     let log: CallLog
     let bytes: Data
 

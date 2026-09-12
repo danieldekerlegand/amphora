@@ -4,8 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
-import android.system.Os
-import android.system.OsConstants
 import dev.amphora.governor.StorageGovernor
 import dev.amphora.model.SourceKind
 import dev.amphora.model.UploadJob
@@ -23,7 +21,10 @@ import java.security.MessageDigest
  * provider stream forces a staged copy — and that is the single path where low storage can block
  * an upload.
  */
-class SourceResolver(private val context: Context) {
+class SourceResolver(
+    private val context: Context,
+    private val content: ContentSource = AndroidContentSource(context),
+) {
 
     fun probe(uri: String): Probe {
         val parsed = Uri.parse(uri)
@@ -58,26 +59,14 @@ class SourceResolver(private val context: Context) {
      */
     fun open(job: UploadJob): SeekableSource {
         job.stagedPath?.let { return SeekableSource.fromFile(File(it)) }
-        val parsed = Uri.parse(job.sourceUri)
-        if (parsed.scheme == null || parsed.scheme == "file") {
-            return SeekableSource.fromFile(File(parsed.path!!))
+        // The row's own kind, not a re-parse of the URI. `probe` derived it from the scheme at
+        // enqueue, so the two answers are the same one — and routing on it keeps `Uri.parse` and
+        // every ContentResolver call on the far side of [ContentSource], which is what lets a JVM
+        // test present a provider at all.
+        if (job.sourceKind == SourceKind.FILE) {
+            return SeekableSource.fromFile(File(Uri.parse(job.sourceUri).path!!))
         }
-
-        val pfd = context.contentResolver.openFileDescriptor(parsed, "r")
-            ?: error("cannot open ${job.sourceUri}")
-        return try {
-            // Pipes and sockets throw ErrnoException(ESPIPE) here. This is deliberately a probe,
-            // not a URI-scheme assumption: providers are allowed to expose either kind of
-            // descriptor. ParcelFileDescriptor has no seek of its own — lseek(2) on the raw
-            // descriptor is the only way to ask the question.
-            check(Os.lseek(pfd.fileDescriptor, 0L, OsConstants.SEEK_SET) >= 0L) {
-                "provider returned an invalid seek position"
-            }
-            SeekableSource.fromDescriptor(pfd)
-        } catch (error: Throwable) {
-            pfd.close()
-            throw NonSeekableSourceException(job.sourceUri, error)
-        }
+        return content.openSeekable(job.sourceUri)
     }
 
     /** Returns a staged file only when the source genuinely cannot be seeked. */
@@ -90,9 +79,7 @@ class SourceResolver(private val context: Context) {
         } catch (_: NonSeekableSourceException) {
             val reservation = storage.reserve(job.id, job.sizeBytes)
             try {
-                val input = context.contentResolver.openInputStream(Uri.parse(job.sourceUri))
-                    ?: error("cannot open ${job.sourceUri}")
-                input.use { source ->
+                content.openStream(job.sourceUri).use { source ->
                     RandomAccessFile(reservation.file, "rw").use { target ->
                         target.seek(0)
                         val copied = source.copyTo(Channels.newOutputStream(target.channel))
