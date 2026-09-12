@@ -122,10 +122,10 @@ error: no tests found; create a target in the 'Tests' directory     # exit 1
 That is **not** an empty suite and **not** a broken package. The real command is:
 
 ```sh
-swift run --package-path ios AmphoraPathTests     # 46 passed as of 2026-08-27
+swift run --package-path ios AmphoraPathTests     # 47 passed as of 2026-09-12
 ```
 
-which is what `.chief/verify.sh` and the `ios` CI job both invoke: 4 upload-path cases, 39
+which is what `.chief/verify.sh` and the `ios` CI job both invoke: 5 upload-path cases, 39
 state-machine vectors, 3 I6 transport vectors. The second executable target,
 `AmphoraTusdIntegration`, is opt-in and SKIPs unless `TUSD_ENDPOINT` is set.
 
@@ -217,3 +217,18 @@ A simulator result is never substituted for a hardware one, here or anywhere els
 **What this pass did not check:** §§1, 2, 4, 5, 6 and 7 were not re-read against the tree. §3's
 central rule is untouched — `Gradle build` still reports `SKIPPED` here for want of a JDK, and that
 is still not a pass.
+
+**2026-09-12, tasklist `150-photos-assets-staged-before-upload`.** §4's counts were one story old.
+
+- **§4 said `46 passed` as of 2026-08-27, made of `4 upload-path cases`.** The tree now says `47`
+  and `5`. What was read to tell them apart is the suite's own summary line, which derives its
+  number from `pathCases + vectors + i6Vectors` rather than printing a literal:
+  `Amphora path tests: 47 passed (5 upload-path cases, 39 state-machine vectors, 3 I6 transport vectors)`.
+  The fifth case is `photosAssetIsStagedBeforeTheRemoteIsCreated`, which drives a `ph://` job
+  through `DefaultUploadEngine` and asserts the export precedes `transport.create`.
+- The `46` quoted at §3's corollary and in the correction above it is **not** stale and was left
+  alone: those quote what run `34675666580` printed, and a run's log does not change.
+
+**What this pass did not check:** §§1, 2, 5, 6 and 7 were not re-read against the tree, and the
+vector counts §6 quotes (`40 / 39 / 1 / 3`) are untouched — no vector was added here. `Gradle build`
+still reports `SKIPPED` locally for want of a JDK.
