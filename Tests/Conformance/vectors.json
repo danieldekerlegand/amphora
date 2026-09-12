@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "source": "docs/reference/state-machine.md",
   "vectors": [
     {
@@ -309,6 +309,56 @@
         "sizeBytes": 1024,
         "resumeFrom": 1023,
         "expect": { "filesCreatedInWorkDir": 0, "bytesFromSource": 1, "stagesRemainder": false }
+      }
+    ]
+  },
+  "//staging": "The decision ladder of persistence-and-recovery.md \u00a73, which the transition rows cannot reach. `vectors` is a pure-function suite over `reduce`, so a port that forgets to stage a source it cannot seek stays green across all forty of them \u2014 and that is not hypothetical: `SourceResolver.stageIfRequired` had ZERO callers on Swift while these vectors reported green, so every `ph://` job handed the transport a file URL whose path was the literal string `ph://...`. The rows below therefore observe the ENGINE's preparation step, not `stageIfRequired` itself: the defect was a missing caller, and a row that called the callee directly would have passed against the bug.",
+  "//scopeStaging": "Each port supplies its OWN source for each row, the same split `transportInvariants` uses, because 'a source that cannot be seeked' is a different object on each platform: iOS has exactly one (a `ph://` Photos asset, behind `PhotosAssetSource`), Android has a `content://` provider whose descriptor refuses `lseek` (behind `ContentSource`). The shared row states the property; each port shows its own preparation step has it. Two observations are necessarily port-specific. `stagedBeforeRemoteCreated` is read on Swift as the order of an export and a `create` in one shared call log, and on Kotlin as the order of a dispatched `SourceResolved` and a `create` call. `neededEqualsSizeBytes` is read on Kotlin only \u2014 it drives the `SpaceDenied` payload, which the Kotlin rows see directly because they observe dispatched events, while neither state machine retains `needed` on the job the Swift rows read back; Swift checks the consequence, `BLOCKED(STORAGE_LOW)`. docs/reference/conformance-vectors.md records what these do and do not prove.",
+  "sourceStaging": {
+    "spec": "docs/reference/persistence-and-recovery.md \u00a73 \u2014 the decision ladder; docs/reference/state-machine.md \u00a72 (PREPARING + SourceResolved / SpaceDenied) and \u00a74 I5 (a reservation is held from PREPARING)",
+    "rows": [
+      {
+        "id": "stage-01-unseekable-source",
+        "spec": "persistence-and-recovery.md \u00a73: a source that cannot be seeked is copied under a reservation of sizeBytes, and the copy happens BEFORE the remote is created \u2014 a reservation refused after `create` has already orphaned a server resource",
+        "sizeBytes": 24,
+        "sourceSeekable": false,
+        "reservation": "granted",
+        "expect": {
+          "staged": true,
+          "stagedBytesEqualSource": true,
+          "stagedInReservationDirectory": true,
+          "stagedBeforeRemoteCreated": true,
+          "remoteCreated": true,
+          "event": "SourceResolved",
+          "filesCreatedInStagingDirectory": 1
+        }
+      },
+      {
+        "id": "stage-02-seekable-source-not-staged",
+        "spec": "persistence-and-recovery.md \u00a73: a seekable source costs ZERO extra storage. This is the negative row, and the one that bites: `stageIfRequired` returning null means 'stream it', not 'refuse it'.",
+        "sizeBytes": 24,
+        "sourceSeekable": true,
+        "reservation": "granted",
+        "expect": {
+          "staged": false,
+          "remoteCreated": true,
+          "event": "SourceResolved",
+          "filesCreatedInStagingDirectory": 0
+        }
+      },
+      {
+        "id": "stage-03-reservation-refused",
+        "spec": "state-machine.md \u00a72: PREPARING + SpaceDenied \u2192 BLOCKED(STORAGE_LOW). The source cannot be seeked and the reservation is refused, so nothing reaches the wire and nothing is left on disk.",
+        "sizeBytes": 24,
+        "sourceSeekable": false,
+        "reservation": "refused",
+        "expect": {
+          "staged": false,
+          "remoteCreated": false,
+          "event": "SpaceDenied",
+          "neededEqualsSizeBytes": true,
+          "filesCreatedInStagingDirectory": 0
+        }
       }
     ]
   }

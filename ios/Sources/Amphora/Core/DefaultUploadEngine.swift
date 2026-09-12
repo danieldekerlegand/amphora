@@ -190,8 +190,25 @@ public actor DefaultUploadEngine: UploadEngine {
         // Create on first run. I2: the URL is persisted by the transition before any byte moves.
         if current.uploadUrl == nil {
             do {
+                // Stage BEFORE the remote exists — the order of `prepare()` in the Kotlin engine.
+                // A `ph://` asset cannot be seeked, so it must become a real file first; doing it
+                // after `create` would orphan a server resource whenever the reservation is
+                // refused. The reducer, not this method, records the path and flips `sourceKind`.
+                let staged: URL?
+                do {
+                    staged = try await sources.stageIfRequired(current)
+                } catch let TransportError.remainderStagingDenied(needed) {
+                    // Kotlin's `StorageReservationDenied -> SpaceDenied`, typed so the machine
+                    // blocks instead of creating remotely. Every other staging failure falls
+                    // through to the transport-error catch below, as it does there.
+                    await dispatch(jobId: job.id, event: .spaceDenied(needed: needed))
+                    return
+                } catch StorageError.stagingDenied {
+                    await dispatch(jobId: job.id, event: .spaceDenied(needed: current.sizeBytes))
+                    return
+                }
                 await dispatch(jobId: job.id, event: .sourceResolved(
-                    sizeBytes: current.sizeBytes, fingerprint: current.fingerprint, stagedPath: current.stagedPath
+                    sizeBytes: current.sizeBytes, fingerprint: current.fingerprint, stagedPath: staged?.path
                 ))
                 let created = try await transport.create(
                     endpoint: current.endpoint, sizeBytes: current.sizeBytes, metadata: current.metadata

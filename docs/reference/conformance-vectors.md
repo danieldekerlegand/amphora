@@ -1,6 +1,6 @@
 # Conformance vectors — what they prove, and what they do not
 
-> **Status:** Draft · **Updated:** 2026-09-03 · **Owner:** Daniel DeKerlegand
+> **Status:** Draft · **Updated:** 2026-09-12 · **Owner:** Daniel DeKerlegand
 
 `Tests/Conformance/vectors.json` is one file, read by both ports, and it exists for one reason: to
 stop the Swift and Kotlin state machines drifting apart. This document records its **scope**, so
@@ -14,16 +14,17 @@ Where the vectors run, and the counterfactual that proves they bite, is in
 
 ## 1. What is in the file
 
-`schemaVersion` 2. Two sections, both required, both counted by both ports before either runs:
+`schemaVersion` 3. Three sections, all required, all counted by both ports before any of them runs:
 
 | Section | Rows | What a row is |
 |---|---|---|
 | `vectors` | 40 | `given` job state + `event` → `expect`. Fed to `UploadStateMachine.reduce`. |
 | `transportInvariants.i6NoChunkTempFiles` | 3 | A file size and a resume offset → what the transport may do to disk. |
+| `sourceStaging.rows` | 3 | Whether a source can be seeked, and whether the reservation is granted → whether a copy is made, and what reaches the wire. |
 
-The counts (`40`, `1` non-reducing, `39` reduced, `3` I6) live in the two test files, not in the
-fixture, so a fixture rewritten by a generator cannot rewrite its own expectations alongside it.
-Adding a vector means touching both ports; that friction is the point.
+The counts (`40`, `1` non-reducing, `39` reduced, `3` I6, `3` staging) live in the two test files,
+not in the fixture, so a fixture rewritten by a generator cannot rewrite its own expectations
+alongside it. Adding a vector means touching both ports; that friction is the point.
 
 ---
 
@@ -62,6 +63,28 @@ This one earns its keep because a port that stages "just the remainder" satisfie
 rows while taking peak extra storage from about zero to the size of the file — and reintroduces the
 class of bug (the OS reclaiming a cache file mid-transfer) that the whole design exists to retire.
 
+**The staging decision — the step no transition row reaches.** `vectors` is a pure-function suite
+over `reduce`, so *which sources cost a copy* was checked by nothing on either port. That is not a
+theoretical gap: on Swift the answer had gone missing outright — `SourceResolver.stageIfRequired`
+had **zero callers** while all 40 rows reported green, so every `ph://` job reached the transport as
+a file URL whose path was the literal string `ph://…`. The three `sourceStaging` rows observe the
+**engine's own preparation step**, never `stageIfRequired`: the defect was a missing *caller*, and a
+row aimed at the callee would have passed against it.
+
+| Row | The source | What it requires |
+|---|---|---|
+| `stage-01-unseekable-source` | cannot be seeked | copied under a reservation of `sizeBytes`, and the copy happens **before** `create` — a reservation refused afterwards has already orphaned a server resource |
+| `stage-02-seekable-source-not-staged` | can be seeked | not copied, `SourceResolved.stagedPath` null, nothing in the staging directory. The negative row: a fix that staged *everything* passes `stage-01` and fails this |
+| `stage-03-reservation-refused` | cannot be seeked, reservation refused | `SpaceDenied(needed = sizeBytes)`, `create` never called, staging directory left empty |
+
+The source is port-specific by necessity, as with I6. iOS has exactly one source it cannot seek — a
+`ph://` Photos asset, presented through `PhotosAssetSource` — where Android has a content provider
+whose descriptor refuses `lseek`, presented through `ContentSource`. Kotlin drives
+`SourcePreparation.prepare` and reads the dispatched events directly; Swift drives the whole engine
+through `enqueue` and reads the row it wrote back. One consequence of that split is worth naming:
+`neededEqualsSizeBytes` is checked by **Kotlin only**, because neither state machine retains
+`needed` on the job, so Swift can only see the consequence — `BLOCKED(STORAGE_LOW)`.
+
 ---
 
 ## 3. What the vectors do NOT cover
@@ -99,7 +122,7 @@ by neither. Effect *ordering* is never checked.
 | I2 — persist before you act | **not asserted** (see `persistBeforeTransfer` above) |
 | I3 — no bytes in flight without a durable record | no vector |
 | I4 — terminal states absorb | partial: resulting state only |
-| I5 — reservation held across `PREPARING`→`FINALIZING` | no vector |
+| I5 — reservation held across `PREPARING`→`FINALIZING` | partial: `stage-01` shows a reservation is taken during `PREPARING` and `stage-03` that a refused one leaves no file, but nothing checks it is *held* to `FINALIZING` |
 | I6 — no chunk temp file | covered, §2 above |
 | I7 — offsets are monotonic | covered by `invariant-i7-offset-monotonic` |
 | I8 — one runner per job, durable lease | no vector |
@@ -108,7 +131,8 @@ by neither. Effect *ordering* is never checked.
 ### 3.4 Whole layers that are out of scope
 
 The vectors are a **pure-function** suite over `reduce`, plus three filesystem observations of the
-transport. Nothing here opens a socket, a database, or an OS service. Not covered by this fixture,
+transport and three of the engine's staging decision. Nothing here opens a socket or an OS service.
+Not covered by this fixture,
 by anything, or by another suite as noted:
 
 - **Wire protocol** — header construction, dialect differences, relative `Location` resolution.
@@ -124,6 +148,16 @@ by anything, or by another suite as noted:
 - **What the OS does with the bytes.** The I6 rows prove *our* code creates no file during an
   attempt. They cannot prove `URLSession` or OkHttp never spools internally; that claim rests on
   the platform documentation quoted in [platform-constraints.md](platform-constraints.md).
+- **What a real Photos asset or a real content provider does.** The `sourceStaging` rows prove
+  *our* call order and bookkeeping — that the copy is made before `create`, under the reservation
+  directory, with the source's bytes, and that a refusal blocks instead of creating. Every source
+  and every allocator in them is a double. They do **not** prove `PHAssetResourceManager` export
+  behaviour, an iCloud-offloaded original (`estimatedSize` is an estimate read from resource
+  metadata, and a row cannot tell you what the export actually writes when the original is not on
+  device), real `StorageManager.allocateBytes` under genuine storage pressure, or the descriptor a
+  real content provider hands back. The device row **iOS / Photos asset** in
+  [environment-matrix.md](environment-matrix.md) therefore stays `NOT YET VERIFIED — physical
+  device`; these rows did not move it, and a simulator result would not either.
 
 ---
 
@@ -149,20 +183,32 @@ longer compiles also exits non-zero:
 | swift / I6 | `startTransfer` writes a `.chunk` file beside the source | `i6-01-fresh-transfer` |
 | kotlin / state-machine | the same `SourceMissing` divergence, in `UploadStateMachine.kt` | `row-04-source-missing` |
 | kotlin / I6 | `RangeRequestBody.writeTo` writes a temp file before streaming | `i6-01-fresh-transfer` |
+| swift / staging | `DefaultUploadEngine.startTransfer` stops calling `sources.stageIfRequired` and tells the machine there is no staged path | `stage-01-unseekable-source` |
+| kotlin / staging | `SourcePreparation.prepare` stops calling `sources.stageIfRequired` and announces the source with a null path | `stage-01-unseekable-source` |
+
+The two staging controls are anchored at the **call**, in `DefaultUploadEngine.swift` and in
+`SourcePreparation.kt` — never inside `SourceResolver`. That is not a stylistic preference: the
+defect they guard was a missing *caller* (`stageIfRequired` itself was correct and had zero call
+sites), so a mutation applied to the callee would have gone red against a tree that already had the
+bug, and green against the bug itself. The Swift mutation is the bug exactly as it shipped: `staged
+= nil`, no copy made, `SourceResolved` carrying no path, `URL(fileURLWithPath: "ph://…")` on the
+wire.
 
 Each mutation is applied to the working tree, run, and restored from a byte-for-byte backup on
-every exit path including interrupt; the script's last act is to prove all four target files are
+every exit path including interrupt; the script's last act is to prove all six target files are
 identical to the copies it took at startup. It never commits and never stashes. A mutation whose
 anchor text has gone missing is a **failure**, not a warning: a control that silently mutates
 nothing would report that the vectors caught a divergence that was never introduced.
 
-Both ports run it in CI — `--port swift` in the `ios` job, `--port kotlin` in the `android` job.
-The `ios` job currently fails at its first step on pre-existing Swift-concurrency errors, so the
-Swift half does not yet execute on the runner; it is run locally instead, and the story notes
-record what it printed. **How many errors, where, and against which run id is stated in exactly
-one place** —
+Both ports run it in CI — `--port swift` in the `ios` job, `--port kotlin` in the `android` job —
+and since tasklist `140` both halves actually execute there. The `ios` job used to die at its first
+step on pre-existing Swift-concurrency errors, which meant the Swift half ran only on a developer's
+machine; run `34677544162` (head `2f8119e`, `chief/150-photos-assets-staged-before-upload`) prints
+`drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` in the `ios` job **and** in the `android`
+job. **Where the two toolchains still disagree is stated in exactly one
+place** —
 [Continuous integration § known divergence](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
-— because that count changes as they are fixed and a second copy of it drifts.
+— because a second copy of that drifts.
 
 ---
 
@@ -170,9 +216,9 @@ one place** —
 
 1. Add the row to `Tests/Conformance/vectors.json`. One file — never a per-platform copy;
    `Tests/Conformance/check-single-fixture.sh` fails the build on a second one.
-2. Bump the expected count in **both** ports — `expectedVectorCount` /
-   `expectedI6VectorCount` in `ios/Tests/AmphoraTests/ConformanceTests.swift`, and
-   `EXPECTED_VECTOR_COUNT` / `EXPECTED_I6_VECTOR_COUNT` in
+2. Bump the expected count in **both** ports — `expectedVectorCount` / `expectedI6VectorCount` /
+   `expectedStagingVectorCount` in `ios/Tests/AmphoraTests/ConformanceTests.swift`, and
+   `EXPECTED_VECTOR_COUNT` / `EXPECTED_I6_VECTOR_COUNT` / `EXPECTED_STAGING_VECTOR_COUNT` in
    `android/src/test/kotlin/dev/amphora/ConformanceVectorsTest.kt`. The two spellings are each
    port's own convention; there is no shared constant.
 3. If the row asserts a field neither port reads today, teach both ports to read it — and move it
@@ -202,3 +248,44 @@ re-derived from `Tests/Conformance/vectors.json` and from the two test files, an
 - **§5 named `EXPECTED_VECTOR_COUNT` as if both ports spelled it that way.** That is the Kotlin
   constant; Swift's is `expectedVectorCount`. A reader following step 2 literally would have
   grepped the Swift file and found nothing.
+
+**2026-09-12, tasklist `150-photos-assets-staged-before-upload`.** The fixture grew a third
+section, `sourceStaging`, and `schemaVersion` went `2` → `3` with it. Four claims here changed
+because the tree changed under them, not because they had drifted:
+
+- **§1 said "two sections" and `schemaVersion` 2.** Three, and 3.
+- **§3.4 said the vectors are "a pure-function suite over `reduce`, plus three filesystem
+  observations of the transport".** There are now three more, of the engine's staging decision —
+  and they open a database, which the same sentence used to deny. It no longer does.
+- **§3.3 listed I5 as "no vector".** `stage-01` and `stage-03` now cover the near half of it: a
+  reservation is taken during `PREPARING`, and a refused one leaves no file. That it is *held* to
+  `FINALIZING` is still checked by nothing, which the row now says.
+- **§5 step 2 named two constants per port.** Three.
+
+**What this pass did not check:** every count in §2's field table and §3.1 was left as the
+2026-09-03 pass recorded it — no transition row was added or removed here, and `vectors` is still
+40. §4's control table is untouched and does not yet list the staging controls.
+
+**2026-09-12, tasklist `150-photos-assets-staged-before-upload`, US-4.** The control table above is
+no longer untouched, and one sentence beside it had gone stale.
+
+- **§4 said the `ios` job "currently fails at its first step on pre-existing Swift-concurrency
+  errors, so the Swift half does not yet execute on the runner".** It does execute, and has since
+  tasklist `140`. What was read to tell them apart is the `ios`
+  job's `Swift drift negative control` step in run `34677544162`, which printed
+  `OK — red, and it named 'stage-01-unseekable-source'` and
+  `drift-control: 3 control(s) ran, 0 skipped, 0 failure(s)` on the runner. The
+  pointer to [continuous-integration.md](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
+  survives, because the two toolchains still differ; what does not survive is the claim that the
+  Swift half is local-only evidence.
+- **§4's table listed four controls.** Six — one staging control per port, anchored at the engine's
+  call site. The paragraph beneath the table says why the anchor is the caller and not
+  `SourceResolver`, which is the whole reason the original defect was invisible.
+- **§3.4 listed six things the fixture does not cover.** Seven: what a real Photos asset or a real
+  content provider does is now its own bullet, because the `sourceStaging` rows are the first rows
+  here that could be mistaken for device evidence.
+
+**What this pass did not check:** §§1, 2, 3.1, 3.2, 3.3 and 5 were not re-read against the tree —
+no row and no constant changed in US-4, only the control script and this document. The Kotlin
+drift control cannot be run on this machine (no JDK on `PATH`), so its half of §4's table rests on
+the CI run id above and on nothing local.

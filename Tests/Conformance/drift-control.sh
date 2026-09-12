@@ -9,7 +9,7 @@
 # green today proves the two ports AGREE. It does not prove the suite would NOTICE if they did not.
 #
 # So this script introduces a deliberate divergence into ONE port at a time, runs that port's
-# vectors, and requires them to go RED naming the vector that caught it. Four controls, two per
+# vectors, and requires them to go RED naming the vector that caught it. Six controls, three per
 # port:
 #
 #   1. state-machine drift — `SourceMissing` stops meaning FAILED(SOURCE_GONE) and starts meaning
@@ -18,6 +18,12 @@
 #      `transportInvariants.i6NoChunkTempFiles` rows must catch it. This is the one worth the most:
 #      staging "just the remainder" is the plausible, well-meaning change that takes peak extra
 #      storage from about zero to the size of the file, and no transition vector would notice.
+#   3. staging drift — the engine stops staging a source it cannot seek, which is not a hypothesis:
+#      it is the defect tasklist `150` fixed, shipped for the whole life of the Swift port while
+#      forty vectors reported green. The mutation is anchored at the CALL, in the engine and in the
+#      Kotlin preparation unit, never inside `SourceResolver` — the bug was a missing caller, so a
+#      control aimed at the callee would have been green against it.
+#      `sourceStaging.rows` must catch it, naming `stage-01-unseekable-source`.
 #
 # Each control edits a source file in the working tree, runs the suite, and restores the file from
 # a byte-for-byte backup — on every exit path, including interrupt. It leaves no commit and no
@@ -76,8 +82,10 @@ skip() {
 targets=(
   ios/Sources/Amphora/Core/UploadStateMachine.swift
   ios/Sources/Amphora/Transport/NativeResumableTransport.swift
+  ios/Sources/Amphora/Core/DefaultUploadEngine.swift
   android/src/main/kotlin/dev/amphora/core/UploadStateMachine.kt
   android/src/main/kotlin/dev/amphora/transport/TusTransport.kt
+  android/src/main/kotlin/dev/amphora/core/SourcePreparation.kt
 )
 pristine_dir="$(mktemp -d)"
 pristine_index=0
@@ -176,6 +184,15 @@ if [ "$port" = "swift" ] || [ "$port" = "both" ]; then
         return TransferHandle(taskIdentifier: taskId, stagedRemainderPath: nil)'
     run_control "swift / I6 drift: the transport writes a chunk temp file" "I6 violated" swift_vectors
     restore_last
+
+    # Anchored at the CALL in the engine, not in SourceResolver: `stageIfRequired` was fine and had
+    # zero callers. `staged = nil` is the bug as it actually shipped — the copy never happens, the
+    # machine is told there is no staged path, and the transport gets `file:///ph://…`.
+    mutate ios/Sources/Amphora/Core/DefaultUploadEngine.swift \
+      'staged = try await sources.stageIfRequired(current)' \
+      'staged = nil'
+    run_control "swift / staging drift: the engine stops staging an unseekable source" "stage-01-unseekable-source" swift_vectors
+    restore_last
   else
     skip "swift drift controls" "no swift toolchain on PATH"
   fi
@@ -194,6 +211,14 @@ if [ "$port" = "kotlin" ] || [ "$port" = "both" ]; then
       '        java.io.File(System.getProperty("java.io.tmpdir"), "amphora-drift-chunk.tmp").writeBytes(ByteArray(16))
         source.channel.position(offset)'
     run_control "kotlin / I6 drift: the transport writes a chunk temp file" "I6 violated" kotlin_vectors
+    restore_last
+
+    # The Kotlin twin, anchored at the same place: the call inside the preparation step the engine
+    # delegates to. Kotlin never lost this call — the control exists so it cannot be lost quietly.
+    mutate android/src/main/kotlin/dev/amphora/core/SourcePreparation.kt \
+      'sources.stageIfRequired(job, storage)' \
+      'null'
+    run_control "kotlin / staging drift: the preparation step stops staging an unseekable source" "stage-01-unseekable-source" kotlin_vectors
     restore_last
   else
     skip "kotlin drift controls" "no JDK on PATH, or no Gradle wrapper"

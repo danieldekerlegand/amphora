@@ -31,6 +31,41 @@ Two conventions, both consequences of how this repository treats evidence
 
 #### Fixed
 
+- **Two staging defects, one per port, neither of which any vector could have caught.** (1) **Swift
+  never staged a `ph://` asset.** `SourceResolver.stageIfRequired` had **zero** callers for the whole
+  life of the port while 40 conformance vectors reported green, so every Photos job reached the
+  background session as `URL(fileURLWithPath: "ph://…")` — a file URL whose path is the literal
+  scheme string. `DefaultUploadEngine.startTransfer` now calls it in the create-on-first-run branch,
+  **before** `.sourceResolved` and **before** `transport.create` (the order Kotlin's `prepare()`
+  already used: a reservation refused after `create` has already orphaned a server resource), with
+  `TransportError.remainderStagingDenied` and `StorageError.stagingDenied` mapping to
+  `.spaceDenied(needed:)` and every other failure falling through to the existing transport-error
+  catch. (2) **Kotlin blocked every seekable content provider.** `prepare()` read a `null` from
+  `stageIfRequired` — which means "seekable, stream it" — as a refusal, so a provider that streams
+  with zero copies was dispatched `SpaceDenied` and left `BLOCKED(STORAGE_LOW)` every time. This one
+  was read from the source while the tasklist was being written and **confirmed by running it red**:
+  run `34677029934`, `android` job, `stage-02-seekable-source-not-staged: the remote was created
+  expected:<true> but was:<false>`. A genuine refusal now arrives only as
+  `StorageReservationDenied`. Both defects sat in the one step the fixture could not see — `vectors`
+  is a pure-function suite over `reduce` and reaches neither engine's preparation step — so the fix
+  includes the check that would have caught them: a third fixture section, `sourceStaging`
+  (`schemaVersion` `2` → `3`), three rows run by **both** ports through the engine's own preparation
+  step rather than by calling `stageIfRequired` directly, and one drift control per port that
+  removes the engine's staging call and requires `stage-01-unseekable-source` to name it. Supporting
+  seams, both introduced to make the decision testable without a device: `PhotosAssetSource` on
+  Swift (the only file that imports `Photos`; the export is *told* its destination, so no
+  implementation can choose `Caches`) and `ContentSource` on Kotlin (the mockable `android.jar`
+  answers `Os.lseek` with `0`, so every provider would otherwise read as seekable). Observed on
+  run `34677544162` (head `2f8119e`, `chief/150-photos-assets-staged-before-upload`), all five jobs
+  `success`: `ios` printed `Amphora path tests: 50 passed (5 upload-path cases, 39 state-machine
+  vectors, 3 I6 transport vectors, 3 source-staging vectors)` and `drift-control: 3 control(s) ran,
+  0 skipped, 0 failure(s)`; `android` printed the same drift-control summary, its staging control
+  going red as `stage-01-unseekable-source: SourceResolved carried no stagedPath — the source was
+  not staged`. **Scope, stated rather than implied:** every source and allocator in these rows
+  is a double. They prove *our* call order and bookkeeping, not `PHAssetResourceManager` export
+  behaviour, not an iCloud-offloaded original, not `StorageManager.allocateBytes` under real
+  pressure. The device row **iOS / Photos asset** stays `NOT YET VERIFIED — physical device`.
+
 - **Every CI job is green on one run id, for the first time in this repository's life — on a branch,
   not on `main`.** Run `34675666580` (head `3b6f934`, `chief/140-ci-green-at-the-root`), **both
   attempts on the identical sha**: `ios`, `android`, `conformance-fixture`, `verify-policy` and
