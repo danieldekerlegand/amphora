@@ -148,6 +148,16 @@ by anything, or by another suite as noted:
 - **What the OS does with the bytes.** The I6 rows prove *our* code creates no file during an
   attempt. They cannot prove `URLSession` or OkHttp never spools internally; that claim rests on
   the platform documentation quoted in [platform-constraints.md](platform-constraints.md).
+- **What a real Photos asset or a real content provider does.** The `sourceStaging` rows prove
+  *our* call order and bookkeeping — that the copy is made before `create`, under the reservation
+  directory, with the source's bytes, and that a refusal blocks instead of creating. Every source
+  and every allocator in them is a double. They do **not** prove `PHAssetResourceManager` export
+  behaviour, an iCloud-offloaded original (`estimatedSize` is an estimate read from resource
+  metadata, and a row cannot tell you what the export actually writes when the original is not on
+  device), real `StorageManager.allocateBytes` under genuine storage pressure, or the descriptor a
+  real content provider hands back. The device row **iOS / Photos asset** in
+  [environment-matrix.md](environment-matrix.md) therefore stays `NOT YET VERIFIED — physical
+  device`; these rows did not move it, and a simulator result would not either.
 
 ---
 
@@ -173,20 +183,30 @@ longer compiles also exits non-zero:
 | swift / I6 | `startTransfer` writes a `.chunk` file beside the source | `i6-01-fresh-transfer` |
 | kotlin / state-machine | the same `SourceMissing` divergence, in `UploadStateMachine.kt` | `row-04-source-missing` |
 | kotlin / I6 | `RangeRequestBody.writeTo` writes a temp file before streaming | `i6-01-fresh-transfer` |
+| swift / staging | `DefaultUploadEngine.startTransfer` stops calling `sources.stageIfRequired` and tells the machine there is no staged path | `stage-01-unseekable-source` |
+| kotlin / staging | `SourcePreparation.prepare` stops calling `sources.stageIfRequired` and announces the source with a null path | `stage-01-unseekable-source` |
+
+The two staging controls are anchored at the **call**, in `DefaultUploadEngine.swift` and in
+`SourcePreparation.kt` — never inside `SourceResolver`. That is not a stylistic preference: the
+defect they guard was a missing *caller* (`stageIfRequired` itself was correct and had zero call
+sites), so a mutation applied to the callee would have gone red against a tree that already had the
+bug, and green against the bug itself. The Swift mutation is the bug exactly as it shipped: `staged
+= nil`, no copy made, `SourceResolved` carrying no path, `URL(fileURLWithPath: "ph://…")` on the
+wire.
 
 Each mutation is applied to the working tree, run, and restored from a byte-for-byte backup on
-every exit path including interrupt; the script's last act is to prove all four target files are
+every exit path including interrupt; the script's last act is to prove all six target files are
 identical to the copies it took at startup. It never commits and never stashes. A mutation whose
 anchor text has gone missing is a **failure**, not a warning: a control that silently mutates
 nothing would report that the vectors caught a divergence that was never introduced.
 
-Both ports run it in CI — `--port swift` in the `ios` job, `--port kotlin` in the `android` job.
-The `ios` job currently fails at its first step on pre-existing Swift-concurrency errors, so the
-Swift half does not yet execute on the runner; it is run locally instead, and the story notes
-record what it printed. **How many errors, where, and against which run id is stated in exactly
-one place** —
+Both ports run it in CI — `--port swift` in the `ios` job, `--port kotlin` in the `android` job —
+and since tasklist `140` both halves actually execute there. The `ios` job used to die at its first
+step on pre-existing Swift-concurrency errors, which meant the Swift half ran only on a developer's
+machine; RUN_ID_PLACEHOLDER. **Where the two toolchains still disagree is stated in exactly one
+place** —
 [Continuous integration § known divergence](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
-— because that count changes as they are fixed and a second copy of it drifts.
+— because a second copy of that drifts.
 
 ---
 
@@ -243,3 +263,24 @@ because the tree changed under them, not because they had drifted:
 **What this pass did not check:** every count in §2's field table and §3.1 was left as the
 2026-09-03 pass recorded it — no transition row was added or removed here, and `vectors` is still
 40. §4's control table is untouched and does not yet list the staging controls.
+
+**2026-09-12, tasklist `150-photos-assets-staged-before-upload`, US-4.** The control table above is
+no longer untouched, and one sentence beside it had gone stale.
+
+- **§4 said the `ios` job "currently fails at its first step on pre-existing Swift-concurrency
+  errors, so the Swift half does not yet execute on the runner".** It does execute, and has since
+  tasklist `140`. What was read to tell them apart is RUN_ID_CORRECTION. The
+  pointer to [continuous-integration.md](continuous-integration.md#known-divergence-verifysh-is-not-identical-to-ci)
+  survives, because the two toolchains still differ; what does not survive is the claim that the
+  Swift half is local-only evidence.
+- **§4's table listed four controls.** Six — one staging control per port, anchored at the engine's
+  call site. The paragraph beneath the table says why the anchor is the caller and not
+  `SourceResolver`, which is the whole reason the original defect was invisible.
+- **§3.4 listed six things the fixture does not cover.** Seven: what a real Photos asset or a real
+  content provider does is now its own bullet, because the `sourceStaging` rows are the first rows
+  here that could be mistaken for device evidence.
+
+**What this pass did not check:** §§1, 2, 3.1, 3.2, 3.3 and 5 were not re-read against the tree —
+no row and no constant changed in US-4, only the control script and this document. The Kotlin
+drift control cannot be run on this machine (no JDK on `PATH`), so its half of §4's table rests on
+the CI run id above and on nothing local.

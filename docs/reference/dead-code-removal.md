@@ -125,6 +125,15 @@ its twin at `DefaultUploadEngine.kt:217`, so a `ph://` job reaches the backgroun
 `URL(fileURLWithPath: "ph://…")`. **The caller is missing, not the callee.** Deleting the callee
 would convert a missing call into a missing feature and destroy the evidence that the ports disagree.
 
+> **Note, 2026-09-12, tasklist `150-photos-assets-staged-before-upload`.** The missing caller was
+> supplied: `DefaultUploadEngine.startTransfer` now stages before it creates. The paragraph above
+> is left as written — the decision it records (keep the callee, fix the caller elsewhere) is what
+> made that a one-line change rather than a re-implementation. Kotlin turned out to carry a defect
+> of its own at the same point, found only because the new shared rows run there too: a *seekable*
+> `content://` was read as a refused reservation and blocked as `BLOCKED(STORAGE_LOW)` every time.
+> Both are now guarded by `sourceStaging` and by a drift control per port
+> ([conformance-vectors.md §4](conformance-vectors.md#4-the-negative-control)).
+
 ## 4. What the local gate could not say
 
 `.chief/verify.sh` reported `3 passed, 1 skipped, 0 failed` after each of the four commits. Per

@@ -165,6 +165,17 @@ is the only implementation of the `ph://` export path that
 is not the place to fix it.** Deleting the callee would convert a missing call into a missing
 feature and erase the evidence that the two ports disagree.
 
+> **Note, 2026-09-12, tasklist `150-photos-assets-staged-before-upload`.** The caller now exists.
+> `DefaultUploadEngine.startTransfer` calls `sources.stageIfRequired(current)` in its
+> create-on-first-run branch, before `.sourceResolved` and before `transport.create` — the order
+> Kotlin's `prepare()` already used. The finding above is left exactly as it was read in tasklist
+> `900`: it was true then, and the reason the callee survived the sweep is the reason the fix was
+> possible at all. What changed is only the call site. The gap that let it ship for the whole life
+> of the port — a conformance suite that reached neither engine's preparation step — is now covered
+> by the `sourceStaging` rows in `Tests/Conformance/vectors.json`, and by a drift control per port
+> that removes the call and requires `stage-01-unseekable-source` to name it
+> ([conformance-vectors.md §4](conformance-vectors.md#4-the-negative-control)).
+
 ### 2.4 `nativeResumeUnavailable` — plumbing that computes nothing, guarding a documented contract
 
 Five files carry the `noteNativeResumeSupported` chain: `BackgroundSessionManager.swift:144` →
