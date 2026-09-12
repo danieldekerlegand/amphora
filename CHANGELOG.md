@@ -27,6 +27,46 @@ Two conventions, both consequences of how this repository treats evidence
 
 ## [Unreleased]
 
+### 2026-09-12
+
+#### Fixed
+
+- **`BackgroundSessionManager` has a concurrency model, and the `ios` CI job's two compile errors go
+  away because of it.** The type carried two unguarded pieces of mutable state (`systemCompletionHandler`
+  and a `lazy var session`) and no statement of which thread touched what, so the `ios` job had been
+  red since its first run on `NetworkGovernor.swift:23` (`reference to captured var 'self'`) and
+  `TUSKitTransport.swift:27` (`BackgroundSessionManager` not `Sendable` inside a `Sendable` struct) —
+  meaning `swift run AmphoraPathTests` and the Swift drift control had never once executed in CI. Both
+  mutable fields are now guarded by one `NSLock` (`NSLock` and not `OSAllocatedUnfairLock`: the package
+  minimum is iOS 15), the session is created eagerly in `init`, the conformance is `@unchecked Sendable`
+  with a per-property table justifying it, and `urlSessionDidFinishEvents` takes the system completion
+  handler and clears it in a single critical section — which also fixes a latent double-call when two
+  batches of events were replayed close together. `ROADMAP.md` §4 asked who owns this model; this is
+  the answer.
+- `NetworkGovernor.start()` binds `guard let self` before the `Task`, so the `Task` captures a `let`
+  rather than the `var` a weak capture produces. The capture stays weak — the actor owns the
+  `NWPathMonitor`, and `stop()` does not clear `pathUpdateHandler`, so a strong capture there is a
+  retain cycle nothing breaks.
+- `SQLiteUploadStore` hands its `sqlite3` handle to a small owning class whose own `deinit` closes it.
+  An actor's `deinit` is nonisolated, so the previous `deinit { sqlite3_close(database) }` read a
+  non-`Sendable` `OpaquePointer` from nonisolated code — an error in the Swift 6 language mode.
+  **Swift: verified locally**; a clean build under `-Xswiftc -warnings-as-errors
+  -Xswiftc -strict-concurrency=complete` now reports zero diagnostics where it reported two.
+
+#### Removed
+
+- `BackgroundUploadStarter`, the `@unchecked Sendable` wrapper struct that existed only because
+  `BackgroundSessionManager` had no concurrency model to point at. `BackgroundUploadStarting` now
+  refines `Sendable` directly and both transports store their session reference without a wrapper.
+
+#### Changed
+
+- `.chief/verify.sh` builds Swift with `-Xswiftc -warnings-as-errors`, the flag the `ios` job uses.
+  This closes the *flag* half of the divergence in
+  [Continuous integration § Known divergence](docs/reference/continuous-integration.md); the
+  toolchain half cannot be closed locally, so the `ios` job gained a first step printing
+  `swift --version` and `xcodebuild -version` to name the compiler behind the next one.
+
 ### 2026-09-03
 
 #### Removed

@@ -86,8 +86,14 @@ skip_check() {
 # resolvable there; the guard would report FAIL for the interpreter rather than for the tree.
 run_check "roadmap truth" "${BASH:-bash}" scripts/check-roadmap-truth.sh
 
+# -Xswiftc -warnings-as-errors is the flag the `ios` CI job builds with, and building without it
+# here is how a branch reached `main` red: the job dies in its FIRST step on concurrency errors a
+# plain local build does not mention. Matching the flag closes the flag half of the divergence
+# recorded in docs/reference/continuous-integration.md § Known divergence. It does NOT close the
+# other half, and cannot: CI's compiler is not this one. Locally 6.3.3 / macOS 26 SDK; the runner
+# is macos-14 with its own Xcode, and the `Swift and Xcode versions` step there prints which.
 if command -v swift >/dev/null 2>&1 && [ -f ios/Package.swift ]; then
-  run_check "Swift build" swift build --package-path ios
+  run_check "Swift build" swift build --package-path ios -Xswiftc -warnings-as-errors
   run_check "Swift tests" swift run --package-path ios AmphoraPathTests
 else
   skip_check "Swift build" "swift toolchain or ios/Package.swift unavailable"

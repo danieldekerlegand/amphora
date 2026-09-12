@@ -16,7 +16,38 @@ import os
 /// `taskIdentifier`, `originalRequest.url`, and `taskDescription`. We stamp `taskDescription`
 /// with the job id and persist `taskIdentifier`, then match on either. That pair is the entire
 /// basis of the adopt path in `Reconciler`.
-public final class BackgroundSessionManager: NSObject {
+///
+/// # Concurrency model
+///
+/// This type is reached from at least four directions at once, which is why the model is written
+/// down rather than inferred: the session's own **delegate queue** (`delegateQueue: nil` means a
+/// private serial `OperationQueue`, so delegate callbacks are serial with respect to each other
+/// but on no queue we control), **`DispatchQueue.main`** in `urlSessionDidFinishEvents`, the
+/// **app delegate's** call to `setSystemCompletionHandler` during launch, and **arbitrary async
+/// callers** of `startUpload` / `pause` / `cancel` / `liveTasks` from whatever executor the engine
+/// happens to be on.
+///
+/// Every stored property, and how it is safe:
+///
+/// | Property | Mutable | Touched from | Protection |
+/// |---|---|---|---|
+/// | `log` | no | everywhere | `Logger` is a value type and documented thread-safe |
+/// | `events` | no | delegate queue | `UploadEventSink` refines `Sendable` |
+/// | `progress` | no | delegate queue | `ProgressCoalescer` guards its own state with `NSLock` |
+/// | `lock` | no | everywhere | it *is* the protection |
+/// | `storedSession` | yes — written once in `init` | every method, via `session` | `lock` |
+/// | `storedCompletion` | yes | app delegate + delegate queue | `lock` |
+///
+/// `NSLock`, not `OSAllocatedUnfairLock` or `Mutex`: those are iOS 16+ / iOS 18+, and the package
+/// minimum is iOS 15 (`ios/Package.swift`). Not an actor either — `URLSessionDelegate` callbacks
+/// are synchronous and non-isolated, so an actor would only move the problem into a `Task` and
+/// lose the ordering the delegate queue already gives us.
+///
+/// The conformance is therefore `@unchecked Sendable` and the table above is what it is checked
+/// against by a reader. Declaring plain `Sendable` is impossible (the superclass `NSObject` is not
+/// `Sendable`), and declaring *either* over an unguarded `var` — which is what this type carried
+/// until tasklist `140` — is the defect restated rather than fixed.
+public final class BackgroundSessionManager: NSObject, @unchecked Sendable {
 
     public static let sessionIdentifier = "dev.amphora.upload.background.v1"
 
@@ -24,11 +55,45 @@ public final class BackgroundSessionManager: NSObject {
     private let events: any UploadEventSink
     private let progress: ProgressCoalescer
 
+    /// Guards `storedSession` and `storedCompletion`, and nothing else. Held for single field
+    /// reads and writes only: no network call, no delegate dispatch and no `await` happens under
+    /// it, so it cannot be the thing that deadlocks a relaunch.
+    private let lock = NSLock()
+
+    /// The session. Optional and `var` for exactly one reason: `URLSession` needs `self` as its
+    /// delegate, and `self` does not exist until after `super.init()` — which Swift will not let a
+    /// `let` be assigned past. It is written once, in `init`, and read through `session` after.
+    private var storedSession: URLSession?
+
     /// Set by the app delegate's `handleEventsForBackgroundURLSession`. Must be invoked on the
     /// main thread once `urlSessionDidFinishEvents` fires, or the system stops relaunching us.
-    private var systemCompletionHandler: (() -> Void)?
+    private var storedCompletion: SystemCompletion?
 
-    private lazy var session: URLSession = {
+    /// UIKit hands the app delegate a bare `() -> Void`, and we do not get to change that
+    /// signature. Boxing it is what lets the handler be carried from the delegate queue to
+    /// `DispatchQueue.main` without demanding a `@Sendable` closure the host cannot produce.
+    /// Safe because the box is *handed off*, never shared: `urlSessionDidFinishEvents` takes it
+    /// out from under `lock` and nils the field in the same critical section, so the closure has
+    /// exactly one owner and is called exactly once.
+    private struct SystemCompletion: @unchecked Sendable {
+        let call: () -> Void
+    }
+
+    /// Never `nil` in practice — `init` assigns it before returning, and nothing clears it.
+    private var session: URLSession {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let storedSession else {
+            preconditionFailure("BackgroundSessionManager.session read before init finished")
+        }
+        return storedSession
+    }
+
+    public init(events: any UploadEventSink, progress: ProgressCoalescer) {
+        self.events = events
+        self.progress = progress
+        super.init()
+
         let config = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
 
         // Let the system pick a good moment for large transfers. Forced off in debug, or uploads
@@ -46,14 +111,12 @@ public final class BackgroundSessionManager: NSObject {
         config.sessionSendsLaunchEvents = true
         config.timeoutIntervalForResource = 7 * 24 * 60 * 60   // a week; large uploads are slow
 
-        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
-    }()
-
-    public init(events: any UploadEventSink, progress: ProgressCoalescer) {
-        self.events = events
-        self.progress = progress
-        super.init()
-        _ = session   // force creation now, not lazily on first use after events arrive
+        // Eagerly, not lazily: rule 2 above. The system may have relaunched us *in order to*
+        // deliver events, and the delegate has to exist before the first one arrives.
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        lock.lock()
+        storedSession = session
+        lock.unlock()
     }
 
     // MARK: - Discovery
@@ -105,7 +168,10 @@ public final class BackgroundSessionManager: NSObject {
     }
 
     public func setSystemCompletionHandler(_ handler: @escaping () -> Void) {
-        systemCompletionHandler = handler
+        let boxed = SystemCompletion(call: handler)
+        lock.lock()
+        storedCompletion = boxed
+        lock.unlock()
     }
 
     public struct LiveTask: Sendable {
@@ -122,10 +188,16 @@ extension BackgroundSessionManager: URLSessionDataDelegate {
     /// The system has finished replaying every queued event into a relaunched app. Calling the
     /// stored handler is not optional — skip it and iOS deprioritises, then stops, relaunching us.
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        DispatchQueue.main.async { [weak self] in
-            self?.systemCompletionHandler?()
-            self?.systemCompletionHandler = nil
-        }
+        // Take it and clear it in one critical section, then hop. The old code did both *inside*
+        // the main-queue block, so two events replayed close together could each see the handler
+        // still set and call it twice — and it also mutated the field from a second thread.
+        lock.lock()
+        let completion = storedCompletion
+        storedCompletion = nil
+        lock.unlock()
+
+        guard let completion else { return }
+        DispatchQueue.main.async { completion.call() }
     }
 
     /// A `104 Upload Resumption Supported` tells us the server speaks the IETF draft, so the

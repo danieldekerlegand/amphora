@@ -8,33 +8,19 @@ import Foundation
 /// up a real background `URLSession` and putting a task on the wire. `BackgroundSessionManager` is
 /// the only production conformer; the seam exists because "we hand over the original file, never a
 /// slice of it" is a claim worth checking rather than asserting in a comment.
-public protocol BackgroundUploadStarting: AnyObject {
+///
+/// **`Sendable` is part of the contract, not a detail of one conformer.** `UploadTransport` is
+/// `Sendable`, so anything a transport stores has to be. Requiring it here is what lets both
+/// transports hold their session reference directly; before tasklist `140` the requirement lived
+/// in a `BackgroundUploadStarter` wrapper struct instead, because `BackgroundSessionManager` had
+/// no concurrency model to point at and `TUSKitTransport` — which holds the object directly — was
+/// a standing `ios` CI error for it. It has one now (see that type's "Concurrency model"), so the
+/// requirement is stated where it belongs and the wrapper is gone.
+public protocol BackgroundUploadStarting: AnyObject, Sendable {
     func startUpload(jobId: String, request: URLRequest, fileURL: URL, expectedBytes: Int64) -> Int
 }
 
 extension BackgroundSessionManager: BackgroundUploadStarting {}
-
-/// A `Sendable` handle to whatever starts background uploads.
-///
-/// `UploadTransport` is `Sendable`, so a transport that stores a session reference directly stores
-/// a non-`Sendable` class inside a `Sendable` struct — the complaint the `ios` CI job already
-/// carries for `TUSKitTransport`, and one this seam would otherwise add a second instance of. The
-/// wrapper is where the assertion is made instead of at the top of a whole class: the only thing
-/// reachable through it is `startUpload`, which touches nothing but `URLSession`, and `URLSession`
-/// is documented as safe to use from any thread. It is deliberately NOT the Sendable redesign
-/// `BackgroundSessionManager` still needs — see docs/reference/continuous-integration.md,
-/// "Known divergence".
-public struct BackgroundUploadStarter: @unchecked Sendable {
-    private let session: any BackgroundUploadStarting
-
-    public init(_ session: any BackgroundUploadStarting) {
-        self.session = session
-    }
-
-    func startUpload(jobId: String, request: URLRequest, fileURL: URL, expectedBytes: Int64) -> Int {
-        session.startUpload(jobId: jobId, request: request, fileURL: fileURL, expectedBytes: expectedBytes)
-    }
-}
 
 /// iOS 17+ path. The good one.
 ///
@@ -49,7 +35,7 @@ public struct BackgroundUploadStarter: @unchecked Sendable {
 @available(iOS 17.0, *)
 public struct NativeResumableTransport: UploadTransport {
 
-    private let session: BackgroundUploadStarter
+    private let session: any BackgroundUploadStarting
     private let dialect: any WireDialect
     private let control: ControlPlaneClient
 
@@ -58,7 +44,7 @@ public struct NativeResumableTransport: UploadTransport {
         dialect: any WireDialect = RufhDialect(),
         control: ControlPlaneClient
     ) {
-        self.session = BackgroundUploadStarter(session)
+        self.session = session
         self.dialect = dialect
         self.control = control
     }

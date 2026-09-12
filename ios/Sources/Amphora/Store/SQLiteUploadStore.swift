@@ -5,7 +5,23 @@ private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self
 
 /// SQLite implementation of the durable upload registry.
 public actor SQLiteUploadStore: UploadStore {
-    private let database: OpaquePointer
+
+    /// Owns the sqlite handle, and is the only thing that closes it.
+    ///
+    /// The handle used to be stored on the actor directly, with `deinit { sqlite3_close(database) }`
+    /// alongside it. An actor's `deinit` is nonisolated, so reading a non-`Sendable`
+    /// `OpaquePointer` from there is an error in the Swift 6 language mode (surfaced under
+    /// `-strict-concurrency=complete`, tasklist `140`). Giving the lifetime to a plain class whose
+    /// *own* deinit does the close answers the question rather than asserting past it: a class
+    /// deinit is under no isolation, the actor's last reference is the only reference, and the
+    /// handle is closed exactly once when the store goes away.
+    private final class Connection: @unchecked Sendable {
+        let handle: OpaquePointer
+        init(_ handle: OpaquePointer) { self.handle = handle }
+        deinit { sqlite3_close(handle) }
+    }
+
+    private let connection: Connection
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -15,8 +31,8 @@ public actor SQLiteUploadStore: UploadStore {
             if let handle { sqlite3_close(handle) }
             throw StoreError.openFailed(String(cString: sqlite3_errmsg(handle)))
         }
-        database = handle
-        sqlite3_busy_timeout(database, 5_000)
+        connection = Connection(handle)
+        sqlite3_busy_timeout(connection.handle, 5_000)
         let schema = """
             PRAGMA foreign_keys = ON;
             CREATE TABLE IF NOT EXISTS upload_jobs (
@@ -34,12 +50,10 @@ public actor SQLiteUploadStore: UploadStore {
                 data BLOB NOT NULL
             );
             """
-        guard sqlite3_exec(database, schema, nil, nil, nil) == SQLITE_OK else {
-            throw StoreError.sqlite(String(cString: sqlite3_errmsg(database)))
+        guard sqlite3_exec(connection.handle, schema, nil, nil, nil) == SQLITE_OK else {
+            throw StoreError.sqlite(String(cString: sqlite3_errmsg(connection.handle)))
         }
     }
-
-    deinit { sqlite3_close(database) }
 
     public func get(id: String) async throws -> UploadJob? {
         try load("SELECT payload FROM upload_jobs WHERE id = ?", bindings: [id]).first
@@ -107,7 +121,7 @@ public actor SQLiteUploadStore: UploadStore {
         try bind(id, at: 3, in: statement)
         try bind(now.timeIntervalSince1970, at: 4, in: statement)
         try step(statement)
-        return sqlite3_changes(database) == 1
+        return sqlite3_changes(connection.handle) == 1
     }
 
     public func releaseLease(id: String, token: String) async throws {
@@ -173,14 +187,14 @@ public actor SQLiteUploadStore: UploadStore {
 
     private func prepare(_ sql: String) throws -> OpaquePointer {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
-            throw StoreError.sqlite(String(cString: sqlite3_errmsg(database)))
+        guard sqlite3_prepare_v2(connection.handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw StoreError.sqlite(String(cString: sqlite3_errmsg(connection.handle)))
         }
         return statement
     }
 
     private func step(_ statement: OpaquePointer) throws {
-        guard sqlite3_step(statement) == SQLITE_DONE else { throw StoreError.sqlite(String(cString: sqlite3_errmsg(database))) }
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw StoreError.sqlite(String(cString: sqlite3_errmsg(connection.handle))) }
     }
 
     private func bindAll(_ values: [Any], to statement: OpaquePointer) throws {
@@ -197,6 +211,6 @@ public actor SQLiteUploadStore: UploadStore {
         case let value as Int: result = sqlite3_bind_int(statement, Int32(index), Int32(value))
         default: throw StoreError.sqlite("Unsupported SQLite binding")
         }
-        guard result == SQLITE_OK else { throw StoreError.sqlite(String(cString: sqlite3_errmsg(database))) }
+        guard result == SQLITE_OK else { throw StoreError.sqlite(String(cString: sqlite3_errmsg(connection.handle))) }
     }
 }

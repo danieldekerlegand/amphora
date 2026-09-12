@@ -24,6 +24,14 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      # Name the compiler that produced whatever follows. This job has been red on concurrency
+      # errors the authoring machine's newer toolchain does not emit at all, and run 34556064209's
+      # log does not say which Swift it used — so the next divergence between the two is arguable
+      # from the log instead of guessed at.
+      - name: Swift and Xcode versions
+        run: |
+          swift --version
+          xcodebuild -version
       - name: Build Swift target with warnings as errors
         run: swift build --package-path ios -Xswiftc -warnings-as-errors
       - name: Run Swift path tests
