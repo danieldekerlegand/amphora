@@ -233,3 +233,21 @@ is still not a pass.
 **What this pass did not check:** §§1, 2, 5, 6 and 7 were not re-read against the tree, and the
 vector counts §6 quotes (`40 / 39 / 1 / 3`) are untouched — no vector was added here. `Gradle build`
 still reports `SKIPPED` locally for want of a JDK.
+
+**2026-09-12, tasklist `150-photos-assets-staged-before-upload`, US-3.** The shared fixture grew a
+third section, so two counts here moved again.
+
+- **§4 said `47 passed` made of three categories.** The tree now says `50`, and the summary line
+  names four: `Amphora path tests: 50 passed (5 upload-path cases, 39 state-machine vectors,
+  3 I6 transport vectors, 3 source-staging vectors)`. What was read to tell them apart is that
+  line, printed by the suite itself; the number is still derived from the category counts rather
+  than typed.
+- **§6 said the vector counts are `40 / 39 / 1 / 3`.** They are `40 / 39 / 1 / 3 / 3` — the new
+  `sourceStaging` section carries three rows, counted in both ports' test code as
+  `expectedStagingVectorCount` / `EXPECTED_STAGING_VECTOR_COUNT`. `schemaVersion` went `2` → `3`
+  with it, a new section being a shape change.
+- The `46` at §3's corollary is still not stale and still quotes run `34675666580`'s log.
+
+**What this pass did not check:** §§1, 2, 5 and 7 were not re-read against the tree. `Gradle build`
+still reports `SKIPPED` locally for want of a JDK, so every Android claim in this tasklist rests on
+CI run ids, not on a local run.

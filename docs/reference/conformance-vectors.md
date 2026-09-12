@@ -226,3 +226,20 @@ re-derived from `Tests/Conformance/vectors.json` and from the two test files, an
 - **§5 named `EXPECTED_VECTOR_COUNT` as if both ports spelled it that way.** That is the Kotlin
   constant; Swift's is `expectedVectorCount`. A reader following step 2 literally would have
   grepped the Swift file and found nothing.
+
+**2026-09-12, tasklist `150-photos-assets-staged-before-upload`.** The fixture grew a third
+section, `sourceStaging`, and `schemaVersion` went `2` → `3` with it. Four claims here changed
+because the tree changed under them, not because they had drifted:
+
+- **§1 said "two sections" and `schemaVersion` 2.** Three, and 3.
+- **§3.4 said the vectors are "a pure-function suite over `reduce`, plus three filesystem
+  observations of the transport".** There are now three more, of the engine's staging decision —
+  and they open a database, which the same sentence used to deny. It no longer does.
+- **§3.3 listed I5 as "no vector".** `stage-01` and `stage-03` now cover the near half of it: a
+  reservation is taken during `PREPARING`, and a refused one leaves no file. That it is *held* to
+  `FINALIZING` is still checked by nothing, which the row now says.
+- **§5 step 2 named two constants per port.** Three.
+
+**What this pass did not check:** every count in §2's field table and §3.1 was left as the
+2026-09-03 pass recorded it — no transition row was added or removed here, and `vectors` is still
+40. §4's control table is untouched and does not yet list the staging controls.

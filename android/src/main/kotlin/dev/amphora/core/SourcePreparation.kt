@@ -2,7 +2,6 @@ package dev.amphora.core
 
 import dev.amphora.governor.StorageGovernor
 import dev.amphora.governor.StorageReservationDenied
-import dev.amphora.model.SourceKind
 import dev.amphora.model.UploadEvent
 import dev.amphora.model.UploadJob
 import dev.amphora.transport.TusTransport
@@ -45,11 +44,14 @@ object SourcePreparation {
         dispatch: suspend (UploadEvent) -> Unit,
         create: suspend (UploadJob) -> TusTransport.CreateResult,
     ): Boolean {
+        // A null here means "seekable — stream it", which is the cheap path and the common one.
+        // It used to mean something else: any `content://` job that came back null was dispatched
+        // straight to SpaceDenied, so a provider that streams with zero copies — the whole point
+        // of the decision ladder — was blocked as if the device were full. Run 34677029934 caught
+        // it; `stage-02-seekable-source-not-staged` is the row. A genuine refusal is the typed
+        // exception below and nothing else.
         val staged: File? = try {
             sources.stageIfRequired(job, storage)
-                ?: if (job.sourceKind == SourceKind.CONTENT_URI && job.stagedPath == null) {
-                    dispatch(UploadEvent.SpaceDenied(job.sizeBytes)); return false
-                } else null
         } catch (denied: StorageReservationDenied) {
             // The provider cannot be streamed and the OS refused the real reservation. Typed as
             // SpaceDenied so the machine blocks instead of creating remotely.

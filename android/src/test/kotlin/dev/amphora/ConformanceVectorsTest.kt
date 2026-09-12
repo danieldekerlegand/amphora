@@ -323,8 +323,8 @@ class ConformanceVectorsTest {
         for (index in 0 until rows.length()) {
             val row = rows.getJSONObject(index)
             checked++
-            runCatching { runStagingVector(row) }
-                .onFailure { failures += "${row.getString("id")}: ${it.message}" }
+            // Every row's own assertions already name it, so the id is not prefixed again here.
+            runCatching { runStagingVector(row) }.onFailure { failures += "${it.message}" }
         }
         assertEquals(
             EXPECTED_STAGING_VECTOR_COUNT,
