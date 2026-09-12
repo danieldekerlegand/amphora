@@ -31,6 +31,44 @@ Two conventions, both consequences of how this repository treats evidence
 
 #### Fixed
 
+- **The Room schema export race is fixed at the configuration, and the exported schema is now in
+  version control.** `:android:kaptReleaseKotlin` had died with
+  `java.lang.IllegalStateException: Empty schema file` on run `33044503283` and then passed on the
+  next run whose input differed by one JSON tasklist file — a gate flipping its verdict on
+  effectively unchanged input. The mechanism was established from the Room 2.6.1 sources before
+  anything was changed: under the raw `room.schemaLocation` processor option, `Context.kt`
+  resolves `schemaInFolderPath` and `schemaOutFolderPath` to the *same* directory, both variant
+  kapt tasks (started 0.5 ms apart — `02:51:02.2888336Z` and `02:51:02.2893492Z` in run
+  `34556064209`) read and write the one file
+  `schemas/dev.amphora.store.UploadDatabase/1.json`, and `Database.exportSchema` serializes
+  through `FileOutputStream(file, false)`, so the file is zero bytes for the width of a write and
+  a concurrent reader gets Gson's `null` and the exception — `SchemaBundle.kt:69` <-
+  `Database.kt:110`, the exact two frames of the observed stack. The fix is the Room Gradle Plugin
+  (`id("androidx.room")` 2.6.1, the same version as `room-runtime`/`room-compiler`) with
+  `room { schemaDirectory("$projectDir/schemas") }`; the `kapt { arguments { arg("room.schemaLocation", ...) } }`
+  block is gone, because the two mechanisms together are an error in Room's own check
+  (`INVALID_GRADLE_PLUGIN_AND_SCHEMA_LOCATION_OPTION`). The plugin gives each variant task its own
+  output directory under `build/intermediates/room/schemas/<task>` and copies into the committed
+  directory from a task both kapt tasks are `finalizedBy`, so no two writers share a target.
+  `android/schemas/dev.amphora.store.UploadDatabase/1.json` is committed with the bytes Room
+  itself wrote, retrieved from CI run `34675294998`, and a new `android` job step fails the build
+  whenever the exported schema and the committed one differ — which is both how the file was
+  retrieved and what stops a later entity change shipping without its schema. Observed on branch
+  run `34675398053` (head `076d82d`): `:android:assemble` SUCCESS, the schema step SUCCESS
+  (`android/schemas is clean: the exported schema equals the committed one`),
+  `:android:testDebugUnitTest` SUCCESS with `ConformanceVectorsTest > sharedVectorsMatchAndroidPort
+  PASSED` and `sharedI6VectorsHoldForTheAndroidTransport PASSED`, `> Task :android:copyRoomSchemas
+  NO-SOURCE` (the steady state: an unchanged schema is not re-written, so there is nothing to
+  copy), and **zero** log lines matching `room.schemaLocation` or `Schema export directory`. One
+  warning survives on `:android:kaptDebugUnitTestKotlin`, quoted rather than called gone:
+  `warning: The following options were not recognized by any processor: '[room.internal.schemaInput, room.internal.schemaOutput, kapt.kotlin.generated]'`
+  — the plugin configures the unit-test component too, and no `kaptTest` processor is declared to
+  claim the options. A green `android` job is deliberately **not** offered as the evidence here:
+  that job was already green on the unchanged tree, and the ROADMAP's exit rule says a green run
+  after a red one on unchanged input closes nothing. The evidence is the mechanism plus the
+  configuration that removes it. kapt's `Kapt currently doesn't support language version 2.0+.
+  Falling back to 1.9.` warning is untouched and out of scope.
+
 - **`BackgroundSessionManager` has a concurrency model, and the `ios` CI job's two compile errors go
   away because of it.** The type carried two unguarded pieces of mutable state (`systemCompletionHandler`
   and a `lazy var session`) and no statement of which thread touched what, so the `ios` job had been
